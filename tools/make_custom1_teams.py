@@ -1,0 +1,54 @@
+"""Make a team variant of the Custom1 scenario.
+
+Teams: player 1 (human) + player 2 (ally AI) vs players 3-8 (allied AIs).
+Everything else (units, triggers, resources, Regicide) is kept as is.
+AI slots stay on the standard AI type, so the lobby dropdown can pick any
+.per script from the game's AI folder for each computer player.
+
+Usage:
+    .venv\\Scripts\\python tools\\make_custom1_teams.py [source] [output]
+"""
+import contextlib
+import io
+import os
+import sys
+
+from AoE2ScenarioParser.datasets.players import AiType
+from AoE2ScenarioParser.datasets.trigger_lists import DiplomacyState
+from AoE2ScenarioParser.scenarios.aoe2_de_scenario import AoE2DEScenario
+
+SCENARIO_DIR = os.path.expanduser(
+    "~/Games/Age of Empires 2 DE/76561199063786381/resources/_common/scenario")
+SOURCE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(SCENARIO_DIR, "Custom1.aoe2scenario")
+OUTPUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(SCENARIO_DIR, "Custom1_2v6.aoe2scenario")
+
+TEAM_A = [1, 2]
+TEAM_B = [3, 4, 5, 6, 7, 8]
+
+if os.path.abspath(SOURCE) == os.path.abspath(OUTPUT):
+    sys.exit("refusing to overwrite the source scenario")
+
+# The parser prints emoji progress lines; keep the console quiet.
+with contextlib.redirect_stdout(io.StringIO()):
+    scenario = AoE2DEScenario.from_file(SOURCE)
+
+players = scenario.player_manager.players
+for team, enemies in ((TEAM_A, TEAM_B), (TEAM_B, TEAM_A)):
+    for pid in team:
+        p = players[pid]
+        allies = [o for o in team if o != pid]
+        if allies:
+            p.set_player_diplomacy(allies, DiplomacyState.ALLY)
+        p.set_player_diplomacy(enemies, DiplomacyState.ENEMY)
+        p.allied_victory = True
+        if pid != 1 and p.ai_type != AiType.STANDARD:
+            print(f"note: player {pid} has AI type {p.ai_type.name}; lobby AI choice may be fixed")
+
+# Lock teams so lobby team settings can't override the scenario's diplomacy.
+options = scenario.option_manager
+options.lock_teams = True
+options.allow_players_choose_teams = False
+
+with contextlib.redirect_stdout(io.StringIO()):
+    scenario.write_to_file(OUTPUT)
+print("wrote", OUTPUT)

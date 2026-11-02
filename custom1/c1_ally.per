@@ -1,0 +1,41 @@
+(defrule
+    (true)
+=>
+    (up-change-name "c1_ally")
+)
+
+(load "c1_ally\Promisory\defaultConstants")
+(load "c1_ally\Promisory\finalingConstants")
+(load "c1_ally\Promisory\customConstants")
+#load-if-not-defined BATTLE-ROYALE
+(load "c1_ally\Promisory\init")
+(load "c1_ally\Promisory\threats")
+(load "c1_ally\Promisory\escrow")
+(load "c1_ally\Promisory\dawn")
+(load "c1_ally\Promisory\gatherers")
+(load "c1_ally\Promisory\scoutcontrol")
+(load "c1_ally\Promisory\tsa")
+(load "c1_ally\Promisory\watercontrol")
+(load "c1_ally\Promisory\general")
+(load "c1_ally\Promisory\orb")
+#load-if-not-defined DIFFICULTY-EASIEST
+#load-if-not-defined DIFFICULTY-EASY
+#load-if-not-defined DIFFICULTY-MODERATE
+#load-if-not-defined INFINITE-RESOURCES-START
+(load "c1_ally\Promisory\boarhunting")
+#end-if
+#end-if
+#end-if
+#end-if
+(load "c1_ally\Promisory\researches")
+(load "c1_ally\Promisory\interaction")
+(load "c1_ally\Promisory\buildings")
+(load "c1_ally\Promisory\units")
+(load "c1_ally\Promisory\trade")
+(load "c1_ally\Promisory\resign")
+#else
+(load "c1_ally\Promisory\finaling")
+#end-if
+(load "c1_ally\Promisory\event")
+
+(include "ailib/Geometry.xs")

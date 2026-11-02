@@ -1,0 +1,324 @@
+"""Generate custom1/c1_enemy/overlord.per: team coordination for the enemy AIs.
+
+What the generated rules do (on top of the stock Promisory AI):
+  * Every enemy AI targets player 1 (the overlord).
+  * The enemy AIs elect a leader through shared goals. The leader picks one
+    shared target (your nearest building, or your king when it is visible)
+    and a rally point a set distance in front of it.
+  * Phases, shared by the whole team:
+      GATHER  - armies march to the rally point and wait there.
+      ATTACK  - once most armies are assembled (or the gather timer runs out),
+                every army attack-moves on the target at the same time.
+      REGROUP - when the team has lost too much of the wave, survivors fall
+                back to the rally point and the cycle repeats.
+  * Idle trade carts are deleted when the AI is at its population cap, so
+    the freed population can go to fighting units.
+  * Phase changes are announced in chat so you can follow them while testing.
+
+Edit the numbers in TUNING, then run (from the repo folder):
+    .venv/Scripts/python custom1/gen_overlord.py
+    .venv/Scripts/python custom1/install.py
+"""
+from pathlib import Path
+
+TUNING = {
+    "ov-target-player": 1,      # who the coalition attacks
+    "ov-tick-secs": 5,          # how often the team logic runs (game seconds)
+    "ov-cmd-every": 3,          # unit orders every N ticks (3 x 5s = 15s)
+    "ov-hb-stale": 20,          # an AI silent this long counts as dead
+    "ov-min-army": 25,          # an AI needs this many soldiers to report ready
+    "ov-min-team-army": 150,    # the team needs this many soldiers to attack
+    "ov-ready-pct": 60,         # % of an AI's army that must be at the rally
+    "ov-ready-cap": 200,        # ...capped at this many units
+    "ov-team-ready-pct": 75,    # % of living AIs that must be ready to attack
+    "ov-gather-timeout": 240,   # attack anyway after gathering this long
+    "ov-retreat-pct": 45,       # regroup when the wave falls below this %
+    "ov-attack-timeout": 600,   # regroup after attacking this long
+    "ov-rally-dist": 40,        # rally point distance in front of the target
+    "ov-near-dist": 22,         # "at the rally" radius
+    "ov-arrived-dist": 10,      # don't re-order units already this close
+    "ov-cart-headroom": 15,     # delete idle carts when pop headroom is below
+}
+
+# Game constants, under our own names so nothing depends on other files.
+GAME = {
+    "ov-fact-game-time": 0, "ov-fact-pop-headroom": 2, "ov-fact-military-pop": 31,
+    "ov-pos-center": 0, "ov-pos-self": 9, "ov-pos-target": 10,
+    "ov-search-local": 1, "ov-search-remote": 2,
+    "ov-act-move": 1, "ov-act-attack-move": 19,
+    "ov-form-line": 2, "ov-form-box": 4, "ov-stance-aggressive": 0,
+    "ov-actionid-attack": 600,
+    "ov-od-action": 5, "ov-od-px": 8, "ov-od-py": 9, "ov-od-distance": 44, "ov-od-idling": 49,
+    "ov-king-class": 959, "ov-idle-trade-cart": 1,
+}
+
+# Goals: ranges the stock AI leaves unused (402-417, 428-445).
+GOALS = {
+    "ov-now": 402, "ov-me": 403, "ov-next-tick": 404, "ov-tick": 405, "ov-slow": 406,
+    "ov-leader": 407, "ov-tmp": 408, "ov-tmp2": 409, "ov-phase": 410, "ov-last-phase": 411,
+    "ov-wave": 412, "ov-army": 413, "ov-needed": 414, "ov-regroup-first": 415,
+    "ov-pulses": 416, "ov-idx": 417,
+    "ov-alive": 428, "ov-ready": 429, "ov-armysum": 430, "ov-armystart": 431,
+    "ov-ss": 432, "ov-ss-last": 433, "ov-ss-remote": 434, "ov-ss-remote-last": 435,
+    "ov-rally-x": 436, "ov-rally-y": 437, "ov-tgt-x": 438, "ov-tgt-y": 439,
+    "ov-home-x": 440, "ov-home-y": 441, "ov-lead-num": 442, "ov-lead-time": 443,
+}
+
+# Shared goals (1-256), visible to every AI on the team.
+SHARED = {
+    "LEADER": 200, "LEADTIME": 201, "PHASE": 202, "WAVE": 203,
+    "RX": 204, "RY": 205, "TX": 206, "TY": 207, "PHASESTART": 208, "ARMYSTART": 209,
+}
+HB, READY, ARMY = 210, 220, 230   # + player number
+
+# Unit classes the coalition moves. Unpacked trebuchets can't move; villagers,
+# trade carts, monks, ships and the king are left to the stock AI.
+ARMY_CLASSES = {
+    "infantry": 906, "cavalry": 912, "archery": 900, "cavalry-archer": 936,
+    "siege": 913, "archery-cannon": 944, "cavalry-cannon": 923, "scorpion": 955,
+    "packed-trebuchet": 951, "petard": 935,
+}
+
+GATHER, ATTACK = 1, 2
+
+out = []
+
+
+def rule(facts, actions, comment=None):
+    if comment:
+        out.append(f"; {comment}")
+    f = "\n".join(f"    {x}" for x in facts)
+    a = "\n".join(f"    {x}" for x in actions)
+    out.append(f"(defrule\n{f}\n=>\n{a}\n)\n")
+
+
+TICK = "(up-compare-goal ov-tick c:== 1)"
+LEAD = "(up-compare-goal ov-leader c:== 1)"
+CMD = ["(up-compare-goal ov-tick c:== 1)", "(up-compare-goal ov-slow c:== 0)"]
+
+
+def sget(shared_id, goal):
+    return f"(up-get-shared-goal c: {shared_id} {goal})"
+
+
+def per_player_slot(base):
+    return [f"(up-modify-goal ov-idx c:= {base})", "(up-modify-goal ov-idx g:+ ov-me)"]
+
+
+out.append(";;; overlord.per - generated by custom1/gen_overlord.py; edit that file, not this one.")
+out.append(";;; Team coordination layer for c1_enemy on top of the stock Promisory AI.\n")
+for name, value in {**TUNING, **GAME, **{k: v for k, v in GOALS.items()}}.items():
+    out.append(f"(defconst {name} {value})")
+out.append("")
+
+# ---------------------------------------------------------------- basics
+rule(["(true)"], [
+    "(set-strategic-number sn-target-player-number ov-target-player)",
+    "(set-strategic-number sn-focus-player-number ov-target-player)",
+], "always attack the overlord")
+
+for n in range(1, 9):
+    rule([f"(player-number {n})"], [f"(up-modify-goal ov-me c:= {n})", "(disable-self)"])
+
+rule(["(true)"], [
+    "(up-get-fact ov-fact-game-time 0 ov-now)",
+    "(up-modify-goal ov-tick c:= 0)",
+], "clock")
+rule(["(up-compare-goal ov-now g:>= ov-next-tick)"], [
+    "(up-modify-goal ov-tick c:= 1)",
+    "(up-modify-goal ov-next-tick g:= ov-now)",
+    "(up-modify-goal ov-next-tick c:+ ov-tick-secs)",
+    "(up-modify-goal ov-slow c:+ 1)",
+])
+rule([TICK, "(up-compare-goal ov-slow c:>= ov-cmd-every)"], ["(up-modify-goal ov-slow c:= 0)"])
+
+rule(["(up-compare-goal ov-me c:>= 1)", "(up-compare-goal ov-now c:>= 3)"], [
+    '(up-chat-data-to-all "c1_enemy: player %d joined the coalition" g: ov-me)',
+    "(disable-self)",
+])
+
+# ------------------------------------------------- heartbeat + army report
+rule([TICK], [
+    "(up-get-fact ov-fact-military-pop 0 ov-army)",
+    *per_player_slot(HB), "(up-set-shared-goal g: ov-idx g: ov-now)",
+    *per_player_slot(ARMY), "(up-set-shared-goal g: ov-idx g: ov-army)",
+], "heartbeat and army size for the leader")
+
+# ------------------------------------------------------- leader election
+rule([TICK], [
+    sget(SHARED["LEADER"], "ov-lead-num"), sget(SHARED["LEADTIME"], "ov-lead-time"),
+    "(up-modify-goal ov-leader c:= 0)",
+    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-lead-time)",
+], "leader election: first AI to find no living leader takes over")
+rule([TICK, "(up-compare-goal ov-lead-num g:== ov-me)"], [
+    "(up-modify-goal ov-leader c:= 1)",
+    f"(up-set-shared-goal c: {SHARED['LEADTIME']} g: ov-now)",
+])
+rule([TICK, "(up-compare-goal ov-leader c:== 0)",
+      "(or (up-compare-goal ov-lead-num c:== 0) (up-compare-goal ov-tmp c:> ov-hb-stale))"], [
+    f"(up-set-shared-goal c: {SHARED['LEADER']} g: ov-me)",
+    f"(up-set-shared-goal c: {SHARED['LEADTIME']} g: ov-now)",
+    "(up-modify-goal ov-leader c:= 1)",
+])
+
+# ------------------------------------------------ leader: count the team
+rule([TICK, LEAD], [
+    "(up-modify-goal ov-alive c:= 0)", "(up-modify-goal ov-ready c:= 0)",
+    "(up-modify-goal ov-armysum c:= 0)",
+], "leader: count living, ready and total army across the team")
+for p in range(1, 9):
+    rule([TICK, LEAD], [
+        sget(HB + p, "ov-tmp2"),
+        "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-tmp2)",
+    ])
+    rule([TICK, LEAD, "(up-compare-goal ov-tmp2 c:<= 0)"], ["(up-modify-goal ov-tmp c:= 9999)"])
+    rule([TICK, LEAD, "(up-compare-goal ov-tmp c:<= ov-hb-stale)"], [
+        "(up-modify-goal ov-alive c:+ 1)",
+        sget(ARMY + p, "ov-tmp2"), "(up-modify-goal ov-armysum g:+ ov-tmp2)",
+        sget(READY + p, "ov-tmp2"),
+    ])
+    rule([TICK, LEAD, "(up-compare-goal ov-tmp c:<= ov-hb-stale)", "(up-compare-goal ov-tmp2 c:== 1)"],
+         ["(up-modify-goal ov-ready c:+ 1)"])
+
+# ------------------------------------------- leader: target + rally point
+rule([TICK, LEAD], [
+    sget(SHARED["PHASE"], "ov-phase"),
+    "(up-get-point ov-pos-self ov-home-x)",
+    "(up-get-point ov-pos-target ov-tgt-x)",
+], "leader: base the plan on your nearest building")
+rule([TICK, LEAD, "(up-compare-goal ov-home-x c:< 0)"], ["(up-get-point ov-pos-center ov-home-x)"])
+rule([TICK, LEAD, f"(up-compare-goal ov-phase c:<= {GATHER})",
+      "(up-compare-goal ov-tgt-x c:>= 0)", "(up-compare-goal ov-tgt-y c:>= 0)"], [
+    "(up-modify-goal ov-rally-x g:= ov-tgt-x)", "(up-modify-goal ov-rally-y g:= ov-tgt-y)",
+    "(up-lerp-tiles ov-rally-x ov-home-x c: ov-rally-dist)",
+    "(up-bound-point ov-rally-x ov-rally-x)",
+    f"(up-set-shared-goal c: {SHARED['RX']} g: ov-rally-x)",
+    f"(up-set-shared-goal c: {SHARED['RY']} g: ov-rally-y)",
+], "rally point sits ov-rally-dist tiles in front of that building, toward the leader's base")
+rule([TICK, LEAD], [
+    "(up-full-reset-search)",
+    "(up-find-remote c: ov-king-class c: 1)",
+    "(up-get-search-state ov-ss)",
+], "leader: if your king is visible, he becomes the attack target")
+rule([TICK, LEAD, "(up-compare-goal ov-ss-remote c:>= 1)"], [
+    "(up-set-target-object ov-search-remote c: 0)",
+    "(up-get-object-data ov-od-px ov-tgt-x)",
+    "(up-get-object-data ov-od-py ov-tgt-y)",
+])
+rule([TICK, LEAD, "(up-compare-goal ov-tgt-x c:>= 0)", "(up-compare-goal ov-tgt-y c:>= 0)"], [
+    f"(up-set-shared-goal c: {SHARED['TX']} g: ov-tgt-x)",
+    f"(up-set-shared-goal c: {SHARED['TY']} g: ov-tgt-y)",
+])
+
+# ---------------------------------------------------- leader: phase logic
+rule([TICK, LEAD, "(up-compare-goal ov-phase c:== 0)"], [
+    f"(up-set-shared-goal c: {SHARED['PHASE']} c: {GATHER})",
+    f"(up-set-shared-goal c: {SHARED['PHASESTART']} g: ov-now)",
+    f"(up-modify-goal ov-phase c:= {GATHER})",
+    '(chat-to-all "c1_enemy coalition: gathering armies")',
+], "leader: start the first gather")
+rule([TICK, LEAD], [
+    sget(SHARED["PHASESTART"], "ov-tmp2"),
+    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-tmp2)",
+    "(up-modify-goal ov-tmp2 g:= ov-ready)", "(up-modify-goal ov-tmp2 c:* 100)",
+    "(up-modify-goal ov-needed g:= ov-alive)", "(up-modify-goal ov-needed c:* ov-team-ready-pct)",
+], "leader: ov-tmp = seconds in phase, ov-tmp2 = ready x 100, ov-needed = alive x pct")
+rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})",
+      "(up-compare-goal ov-armysum c:>= ov-min-team-army)", "(up-compare-goal ov-ready c:>= 1)",
+      "(or (up-compare-goal ov-tmp2 g:>= ov-needed) (up-compare-goal ov-tmp c:>= ov-gather-timeout))"], [
+    f"(up-set-shared-goal c: {SHARED['PHASE']} c: {ATTACK})",
+    f"(up-set-shared-goal c: {SHARED['PHASESTART']} g: ov-now)",
+    f"(up-set-shared-goal c: {SHARED['ARMYSTART']} g: ov-armysum)",
+    sget(SHARED["WAVE"], "ov-wave"), "(up-modify-goal ov-wave c:+ 1)",
+    f"(up-set-shared-goal c: {SHARED['WAVE']} g: ov-wave)",
+    f"(up-modify-goal ov-phase c:= {ATTACK})",
+    "(up-modify-goal ov-tmp c:= 0)",
+    '(up-chat-data-to-all "c1_enemy coalition: ATTACK! wave %d" g: ov-wave)',
+], "leader: gather -> attack when most armies are ready, or the gather timer runs out")
+rule([TICK, LEAD], [
+    sget(SHARED["ARMYSTART"], "ov-armystart"),
+    "(up-modify-goal ov-tmp2 g:= ov-armysum)", "(up-modify-goal ov-tmp2 c:* 100)",
+    "(up-modify-goal ov-needed g:= ov-armystart)", "(up-modify-goal ov-needed c:* ov-retreat-pct)",
+])
+rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {ATTACK})",
+      "(or (up-compare-goal ov-tmp2 g:< ov-needed) (up-compare-goal ov-tmp c:>= ov-attack-timeout))"], [
+    f"(up-set-shared-goal c: {SHARED['PHASE']} c: {GATHER})",
+    f"(up-set-shared-goal c: {SHARED['PHASESTART']} g: ov-now)",
+    f"(up-modify-goal ov-phase c:= {GATHER})",
+    '(up-chat-data-to-all "c1_enemy coalition: regrouping, %d soldiers left" g: ov-armysum)',
+], "leader: attack -> regroup after heavy losses or a long fight")
+
+# ------------------------------------------------- every AI: read the plan
+rule([TICK], [
+    sget(SHARED["PHASE"], "ov-phase"),
+    sget(SHARED["RX"], "ov-rally-x"), sget(SHARED["RY"], "ov-rally-y"),
+    sget(SHARED["TX"], "ov-tgt-x"), sget(SHARED["TY"], "ov-tgt-y"),
+], "every AI: read the shared plan")
+rule([TICK, "(up-compare-goal ov-phase g:!= ov-last-phase)"], [
+    "(up-modify-goal ov-pulses c:= 0)", "(up-modify-goal ov-regroup-first c:= 0)",
+    *per_player_slot(READY), "(up-set-shared-goal g: ov-idx c: 0)",
+], "phase changed: reset my ready flag and pulse count")
+rule([TICK, f"(up-compare-goal ov-phase c:== {GATHER})", f"(up-compare-goal ov-last-phase c:== {ATTACK})"],
+     ["(up-modify-goal ov-regroup-first c:= 1)"], "coming back from an attack: pull everyone out once")
+rule([TICK], ["(up-modify-goal ov-last-phase g:= ov-phase)"])
+
+# ------------------------------------------- army management (pop space)
+rule([*CMD, "(population-headroom < ov-cart-headroom)",
+      "(up-idle-unit-count ov-idle-trade-cart >= 1)"],
+     ["(up-delete-idle-units ov-idle-trade-cart)"],
+     "at the pop cap, idle trade carts give their population to soldiers")
+
+
+# ------------------------------------------------------- gather: orders
+def class_rules(cls_id, facts, point, prep, action, formation):
+    """Order one unit class in two batches of up to 240 (the search list limit)."""
+    first = [f"(up-find-local c: {cls_id} c: 240)", "(up-get-search-state ov-ss)", *prep,
+             f"(up-target-point 0 {action} {formation} ov-stance-aggressive)"]
+    rule(facts, ["(up-full-reset-search)", f"(up-set-target-point {point})", *first])
+    rule(facts + ["(up-compare-goal ov-ss-last c:>= 240)"],
+         ["(up-reset-search 0 1 0 0)", f"(up-set-target-point {point})", *first])
+
+
+GATHER_ON = [*CMD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal ov-rally-x c:> 0)"]
+ATTACK_ON = [*CMD, f"(up-compare-goal ov-phase c:== {ATTACK})", "(up-compare-goal ov-tgt-x c:> 0)"]
+
+out.append(";;; ---------- GATHER: march to the rally point")
+rule(GATHER_ON, ["(up-full-reset-search)", "(up-set-target-point ov-rally-x)"]
+     + [f"(up-find-local c: {c} c: 240)" for c in ARMY_CLASSES.values()]
+     + ["(up-remove-objects ov-search-local ov-od-distance > ov-near-dist)", "(up-get-search-state ov-ss)",
+        "(up-modify-goal ov-needed g:= ov-army)", "(up-modify-goal ov-needed c:* ov-ready-pct)",
+        "(up-modify-goal ov-needed c:/ 100)", "(up-modify-goal ov-needed c:min ov-ready-cap)"],
+     "count my soldiers at the rally point")
+rule(GATHER_ON + ["(up-compare-goal ov-army c:>= ov-min-army)", "(up-compare-goal ov-ss g:>= ov-needed)",
+                  "(up-compare-goal ov-pulses c:>= 2)"],
+     [*per_player_slot(READY), "(up-set-shared-goal g: ov-idx c: 1)"],
+     "enough of my army is assembled: report ready")
+for name, cid in ARMY_CLASSES.items():
+    out.append(f"; gather: {name}")
+    # Retreat pulse right after an attack: everyone, plain move, even mid-fight.
+    class_rules(cid, GATHER_ON + ["(up-compare-goal ov-regroup-first c:== 1)"], "ov-rally-x", [],
+                "ov-act-move", "ov-form-line")
+    # Normal pulses: leave fighting units and units already there alone.
+    class_rules(cid, GATHER_ON + ["(up-compare-goal ov-regroup-first c:== 0)"], "ov-rally-x",
+                ["(up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)",
+                 "(up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)"],
+                "ov-act-attack-move", "ov-form-line")
+
+out.append(";;; ---------- ATTACK: everyone attack-moves on the shared target")
+for name, cid in ARMY_CLASSES.items():
+    out.append(f"; attack: {name}")
+    # First pulse of a wave: every soldier not already fighting.
+    class_rules(cid, ATTACK_ON + ["(up-compare-goal ov-pulses c:== 0)"], "ov-tgt-x",
+                ["(up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)"],
+                "ov-act-attack-move", "ov-form-box")
+    # Later pulses: only idle soldiers, so marching formations aren't re-ordered.
+    class_rules(cid, ATTACK_ON + ["(up-compare-goal ov-pulses c:>= 1)"], "ov-tgt-x",
+                ["(up-remove-objects ov-search-local ov-od-idling == 0)"],
+                "ov-act-attack-move", "ov-form-box")
+
+rule(CMD, ["(up-modify-goal ov-pulses c:+ 1)", "(up-modify-goal ov-regroup-first c:= 0)"],
+     "end of an order pulse")
+
+target = Path(__file__).resolve().parent / "c1_enemy" / "overlord.per"
+target.write_text("\n".join(out) + "\n", encoding="utf-8")
+print("wrote", target, f"({sum(1 for x in out if x.startswith('(defrule'))} rules)")
