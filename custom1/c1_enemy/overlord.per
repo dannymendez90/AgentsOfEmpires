@@ -24,8 +24,8 @@
 (defconst ov-march-formation -1)
 (defconst ov-stage-secs 240)
 (defconst ov-king-memory 180)
-(defconst ov-king-stale 25)
-(defconst ov-spy-every 45)
+(defconst ov-king-stale 90)
+(defconst ov-spy-every 180)
 (defconst ov-defend-flags 14)
 (defconst ov-cart-headroom 15)
 (defconst ov-chatty 1)
@@ -212,7 +212,7 @@
 
 ; every AI: report your king whenever it can see him
 (defrule
-    (up-compare-goal ov-tick c:== 1)
+    (true)
 =>
     (up-full-reset-search)
     (up-find-remote c: ov-king-class c: 1)
@@ -220,9 +220,26 @@
 )
 
 (defrule
-    (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-ss-remote c:>= 1)
 =>
+    (up-modify-goal ov-tmp g:= ov-now)
+    (up-modify-goal ov-tmp g:- ov-ktime)
+)
+
+; leader: announce a fresh sighting so you can tell Treason worked
+(defrule
+    (up-compare-goal ov-ss-remote c:>= 1)
+    (up-compare-goal ov-leader c:== 1)
+    (up-compare-goal ov-tmp c:> ov-king-stale)
+    (up-compare-const ov-chatty == 1)
+=>
+    (chat-to-all "c1_enemy coalition: king spotted, attacking his position")
+)
+
+(defrule
+    (up-compare-goal ov-ss-remote c:>= 1)
+=>
+    (up-modify-goal ov-ktime g:= ov-now)
     (up-set-target-object ov-search-remote c: 0)
     (up-get-object-data ov-od-px ov-tmp)
     (up-get-object-data ov-od-py ov-tmp2)
@@ -243,9 +260,10 @@
     (up-modify-goal ov-tmp2 g:- ov-spytime)
 )
 
-; Regicide: research Treason to reveal your king (any AI that can afford it)
+; Regicide: the leader researches Treason, only when nobody has seen your king for a while
 (defrule
     (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-leader c:== 1)
     (up-compare-goal ov-phase c:>= 1)
     (up-compare-goal ov-tmp c:> ov-king-stale)
     (up-compare-goal ov-tmp2 c:> ov-spy-every)

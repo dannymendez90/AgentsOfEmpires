@@ -6,7 +6,7 @@ allied, usually with a truce (treaty) at the start.
 What the generated rules do (on top of the stock Promisory AI):
   * Every AI targets player 1 and they elect a leader through shared goals.
   * Finding the king: every AI reports when it sees your king. When nobody has
-    seen him for a while, an AI researches Treason at its castle (Regicide),
+    seen him for a while, the leader researches Treason (Regicide),
     which reveals your king. In non-Regicide games they research Spies once.
     A king sighting stays the attack target for ov-king-memory seconds;
     otherwise the target is your nearest building.
@@ -61,8 +61,8 @@ TUNING = {
     "ov-march-formation": -1,   # formation used to reach the rally (-1 none)
     "ov-stage-secs": 240,       # start gathering this long before the truce ends
     "ov-king-memory": 180,      # a king sighting stays the target this long
-    "ov-king-stale": 25,        # research Treason when the king's unseen this long
-    "ov-spy-every": 45,         # team-wide minimum gap between Treason researches
+    "ov-king-stale": 90,        # research Treason when the king's unseen this long
+    "ov-spy-every": 180,        # minimum gap between Treason researches
     "ov-defend-flags": 14,      # sn-disable-defend-groups while the coalition runs
     "ov-cart-headroom": 15,     # delete idle carts when pop headroom is below
     "ov-chatty": 1,             # 1 = announce phases and Treason in chat
@@ -206,12 +206,20 @@ rule([TICK], [
 ], "heartbeat and army size for the leader")
 
 # ------------------------------------------------------ finding the king
-rule([TICK], [
+# Checked every pass, not every tick: Treason only reveals the king briefly.
+rule(["(true)"], [
     "(up-full-reset-search)",
     "(up-find-remote c: ov-king-class c: 1)",
     "(up-get-search-state ov-ss)",
 ], "every AI: report your king whenever it can see him")
-rule([TICK, "(up-compare-goal ov-ss-remote c:>= 1)"], [
+rule(["(up-compare-goal ov-ss-remote c:>= 1)"], [
+    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-ktime)",
+])
+rule(["(up-compare-goal ov-ss-remote c:>= 1)", LEAD, "(up-compare-goal ov-tmp c:> ov-king-stale)", CHATTY], [
+    '(chat-to-all "c1_enemy coalition: king spotted, attacking his position")',
+], "leader: announce a fresh sighting so you can tell Treason worked")
+rule(["(up-compare-goal ov-ss-remote c:>= 1)"], [
+    "(up-modify-goal ov-ktime g:= ov-now)",
     "(up-set-target-object ov-search-remote c: 0)",
     "(up-get-object-data ov-od-px ov-tmp)",
     "(up-get-object-data ov-od-py ov-tmp2)",
@@ -224,12 +232,12 @@ rule([TICK], [
     "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-ktime)",
     "(up-modify-goal ov-tmp2 g:= ov-now)", "(up-modify-goal ov-tmp2 g:- ov-spytime)",
 ], "ov-tmp = seconds since the king was seen, ov-tmp2 = seconds since the team's last Treason")
-rule([TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:> ov-king-stale)",
+rule([TICK, LEAD, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:> ov-king-stale)",
       "(up-compare-goal ov-tmp2 c:> ov-spy-every)", "(can-spy)"], [
     "(spy)",
     f"(up-set-shared-goal c: {SHARED['SPYTIME']} g: ov-now)",
     "(up-modify-goal ov-spytime c:= -1)",
-], "Regicide: research Treason to reveal your king (any AI that can afford it)")
+], "Regicide: the leader researches Treason, only when nobody has seen your king for a while")
 rule([TICK, "(up-compare-goal ov-spytime c:== -1)", CHATTY], [
     '(up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)',
 ])
