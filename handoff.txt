@@ -1,0 +1,106 @@
+HANDOFF - Custom1 coalition AI (AoE2 DE)
+Last updated: 2026-11-02
+
+GOAL
+  An AI for the user's custom games. The user (player 1) plays an "overlord":
+  Regicide, king/queen units trigger unit creation and infinite resources, and
+  usually a 30-minute truce. Players 2-8 are all AIs allied against player 1.
+  The AIs should cooperate: find the king, gather, attack together in
+  formation, reinforce in groups, and keep building armies after the map's
+  resources run out (they get abundant resources).
+
+CURRENT STATE
+  Branch custom1-coalition-ai, latest commit e13829d. NOT pushed yet: GitHub
+    rejected the saved login (HTTPS, Git Credential Manager; no SSH keys, no
+    gh CLI). The user must sign in once:
+      git -C C:/Users/danny/proj/AgentsOfEmpires push -u origin custom1-coalition-ai
+  The latest AI is generated, linted and installed in the game folder.
+  Live-tested once (v1). The user's feedback led to v2 (below). The Treason
+    throttle (last commit) has not been playtested yet.
+
+HOW TO PLAY
+  Scenario: Custom1_1v7 (or the original Custom1, which has the same teams).
+  Set all 7 AI slots to c1_enemy, and set the truce in the lobby.
+  Restart the game after every install, because it reads AI files at startup.
+  Proof that it loaded: chat shows "c1_enemy: player N joined the coalition".
+
+WORKFLOW (UCRT64 bash, from C:/Users/danny/proj/AgentsOfEmpires; use forward slashes)
+  1. Edit custom1/gen_overlord.py (the TUNING dict holds all timings and distances).
+  2. .venv/Scripts/python custom1/gen_overlord.py   -> writes custom1/c1_enemy/overlord.per
+  3. .venv/Scripts/python custom1/lint_per.py custom1/c1_enemy/overlord.per   -> must print OK
+  4. .venv/Scripts/python custom1/install.py        -> copies the .per files, packages and .ai markers to the game
+  5. Restart AoE2 and play.
+  6. git commit. Push once auth is fixed.
+  Scenario rebuild (only if Custom1 itself is edited):
+     .venv/Scripts/python -X utf8 tools/make_custom1_teams.py --1v7
+  Note: the system "python" is 2.7. Always use .venv/Scripts/python (Python 3.10).
+
+KEY FILES / LOCATIONS
+  Repo:          C:/Users/danny/proj/AgentsOfEmpires (fork of AgentsOfEmpires)
+  settings.txt:  line 1 = the game AI folder
+                 C:\Program Files (x86)\Steam\steamapps\common\AoE2DE\resources\_common\ai
+  Scenarios:     C:\Users\danny\Games\Age of Empires 2 DE\76561199063786381\resources\_common\scenario\
+                 Custom1.aoe2scenario (original, already 1 vs 2-8), Custom1_1v7, Custom1_2v6 (old)
+  Saves:         ...\76561199063786381\savegame\
+  custom1/c1_enemy.per            loader: stock Promisory + (load "c1_enemy\overlord")
+  custom1/c1_enemy/Promisory/     fork of Promisory (the game's "extreme" AI). customConstants.per has
+                                  force-old-micro = 1 (gen_overlord.py patches this automatically)
+  custom1/gen_overlord.py         generator for the coalition layer (edit this, not overlord.per)
+  custom1/lint_per.py             paren/name/rule-size checker against docs/aoe2-ai-parser
+  custom1/install.py              installer
+  custom1/c1_ally*                unmodified Promisory fork; no longer needed (no ally AI in 1v7)
+  tools/make_custom1_teams.py     makes the team variants of the scenario (--1v7)
+  docs/aoe2-ai-parser/ai-symbol-reference.md   command and strategic-number reference
+
+COALITION DESIGN (overlord.per, v2)
+  - Target and focus are always player 1. The leader is elected through shared goals (heartbeats).
+  - King: every AI scans for the king (class 959) on every pass and shares KX/KY/KTIME.
+    The leader researches Treason with (spy) only when the king has been unseen for 90s
+    (ov-king-stale), and at most once every 180s (ov-spy-every). A sighting stays the
+    target for 180s. Otherwise the target is the nearest building, falling back to the
+    start position (position-focus) during the truce.
+  - Rally point: ov-rally-dist (35) tiles in front of the target, toward the leader's base.
+    It only moves if it shifts more than 12 tiles.
+  - Phases (shared goal 202): 0 = stock AI only; GATHER = 1; ATTACK = 2; regroup goes back to 1.
+    Gathering starts ov-stage-secs (240s) before the truce ends (up-get-treaty-data).
+    The attack starts when the truce is over AND (75% of AIs are ready OR 180s have passed).
+    Regroup when the wave drops below 40% of its starting size, or after 600s.
+  - Orders: the whole army in one up-find-local (all units, cmdid military), excluding the
+    king, ships, unpacked trebuchets and garrisoned units; two batches of 240.
+      March to the rally: no formation (gets through chokes); idle units re-sent every 5s tick.
+      Launch: units within 60 tiles of the target attack-move in line formation.
+      Reinforce every 30s: the group waiting at the rally goes in together.
+      Re-launch if the king moves more than 12 tiles.
+  - While phase >= 1, the stock AI's own army control is switched off: attack groups (0, disabled),
+    sn-task-ungrouped-soldiers 0, sn-disable-defend-groups 14, sn-number-tasked-units 0,
+    patrol-attack 1.
+  - Idle trade carts are deleted at the population cap.
+  - Chat: joined / gathering (truce countdown) / ATTACK! wave N / regrouping / Treason used / king spotted.
+
+TECHNICAL NOTES
+  Free goals used: 402-417, 421-424, 426-445 (other goals up to 512 belong to Promisory).
+  Shared goals: 200-209 for the plan, 210+p heartbeat, 220+p ready, 230+p army,
+    240-243 for the king and Treason.
+  Rules must stay at 29 facts+actions or fewer (the stock maximum); lint checks this.
+  Treason is the (spy) command and only works in Regicide; Custom1 has Regicide on.
+  Scenario parsing uses AoE2ScenarioParser 0.9.8 (run with -X utf8 because of emoji output).
+  Saves: mgz 1.8.51 headers. Its metadata parse misfires, so skip it and call parse_players
+    with len(de["players"])+1.
+  Older save-analysis scripts are in the session scratchpad, which may be gone.
+  Saves showed: armies of 400+ that were idle and scattered, about 70 idle trade carts each,
+    little siege, and mostly un-upgraded units.
+
+OPEN ITEMS / IDEAS
+  - Push the branch (needs the user's GitHub sign-in).
+  - Playtest v2 and check for:
+      do armies flow through chokes?
+      does each wave hit together?
+      is formation size (up to 240 units) clunky?
+      after "used Treason", does "king spotted" follow?
+      are AI towns now too passive on defense?
+  - Possible next steps:
+      better army composition (more siege, upgrades)
+      flanking from several sides (split the rally point per AI)
+      protecting their own kings
+      tuning distances and timings
+  - Optionally remove c1_ally from install.py and the repo.
