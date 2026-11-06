@@ -18,9 +18,11 @@ CURRENT STATE
   Live-tested once (v1). The user's feedback led to v2 (below). The Treason
     throttle (last commit) has not been playtested yet.
 
-HOW TO PLAY
-  Scenario: Custom1_1v7 (or the original Custom1, which has the same teams).
-  Set all 7 AI slots to c1_enemy, and set the truce in the lobby.
+HOW TO PLAY (always tell the user the exact setup after each change)
+  Single Player > Custom > Scenario: Custom1_1v7
+  Player 1: the user. Players 2-8: AI "c1_enemy" (all 7 slots).
+  The teams are locked by the scenario. Population 500 (the scenario sets it per player).
+  Truce/treaty 30 min. Regicide is built into the scenario.
   Restart the game after every install, because it reads AI files at startup.
   Proof that it loaded: chat shows "c1_enemy: player N joined the coalition".
 
@@ -68,7 +70,7 @@ COALITION DESIGN (overlord.per, v2)
     The attack starts when the truce is over AND (75% of AIs are ready OR 180s have passed).
     Regroup when the wave drops below 40% of its starting size, or after 600s.
   - Orders: the whole army in one up-find-local (all units, cmdid military), excluding the
-    king, ships, unpacked trebuchets and garrisoned units; two batches of 240.
+    king, ships, unpacked trebuchets and garrisoned units; three batches of 240 (500-pop games).
       March to the rally: no formation (gets through chokes); idle units re-sent every 5s tick.
       Launch: units within 60 tiles of the target attack-move in line formation.
       Reinforce every 30s: the group waiting at the rally goes in together.

@@ -140,8 +140,8 @@ def per_player_slot(base):
     return [f"(up-modify-goal ov-idx c:= {base})", "(up-modify-goal ov-idx g:+ ov-me)"]
 
 
-def army(facts, near, lo, hi, prep, dest, action, formation, comment=None, batches=2):
-    """Order this AI's soldiers in batches of up to 240 (the search list limit).
+def army(facts, near, lo, hi, prep, dest, action, formation, comment=None, batches=3):
+    """Order this AI's soldiers in batches of up to 240 (the search list limit); 3 batches cover a 500-pop army.
 
     Picks soldiers whose distance to point `near` is between lo and hi (-1 =
     no limit), applies the extra removals in `prep`, then sends the rest to

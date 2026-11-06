@@ -981,6 +981,27 @@
     (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
 )
 
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 1)
+    (up-compare-goal ov-rally-x c:> 0)
+    (up-compare-goal ov-regroup-first c:== 1)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
+    (up-set-target-point ov-rally-x)
+    (up-filter-distance c: ov-near-dist c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+)
+
 ; march pulse: every soldier not fighting and not there yet
 (defrule
     (up-compare-goal ov-tick c:== 1)
@@ -1028,6 +1049,29 @@
     (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
 )
 
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 1)
+    (up-compare-goal ov-rally-x c:> 0)
+    (up-compare-goal ov-regroup-first c:== 0)
+    (up-compare-goal ov-slow c:== 0)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
+    (up-set-target-point ov-rally-x)
+    (up-filter-distance c: ov-arrived-dist c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
+)
+
 ; between pulses: idle soldiers away from the rally get moving again
 (defrule
     (up-compare-goal ov-tick c:== 1)
@@ -1038,6 +1082,29 @@
 =>
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
+    (up-set-target-point ov-rally-x)
+    (up-filter-distance c: ov-near-dist c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-idling == 0)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 1)
+    (up-compare-goal ov-rally-x c:> 0)
+    (up-compare-goal ov-regroup-first c:== 0)
+    (up-compare-goal ov-slow c:!= 0)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
     (up-set-target-point ov-rally-x)
     (up-filter-distance c: ov-near-dist c: -1)
     (up-find-local c: ov-all-units c: 240)
@@ -1130,6 +1197,28 @@
     (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
 )
 
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 2)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (up-compare-goal ov-launch c:== 1)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
+    (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
+)
+
 ; launch: soldiers still far away head to the rally point
 (defrule
     (up-compare-goal ov-tick c:== 1)
@@ -1139,6 +1228,30 @@
 =>
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
+    (up-set-target-point ov-rally-x)
+    (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
+    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 2)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (up-compare-goal ov-launch c:== 1)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
     (up-filter-distance c: ov-launch-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
@@ -1235,6 +1348,29 @@
     (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
 )
 
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 2)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (up-compare-goal ov-launch c:== 0)
+    (up-compare-goal ov-reinforce c:== 0)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
+    (up-set-target-point ov-rally-x)
+    (up-filter-distance c: -1 c: ov-near-dist)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
+    (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
+)
+
 ; reinforce: new soldiers from home head to the rally point
 (defrule
     (up-compare-goal ov-tick c:== 1)
@@ -1245,6 +1381,31 @@
 =>
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
+    (up-set-target-point ov-rally-x)
+    (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
+    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 2)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (up-compare-goal ov-launch c:== 0)
+    (up-compare-goal ov-reinforce c:== 0)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
     (up-filter-distance c: ov-launch-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
@@ -1337,6 +1498,31 @@
     (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
 )
 
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 2)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (up-compare-goal ov-launch c:== 0)
+    (up-compare-goal ov-reinforce c:!= 0)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-idling == 0)
+    (up-set-target-point ov-rally-x)
+    (up-remove-objects ov-search-local ov-od-distance < ov-near-dist)
+    (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
+)
+
 ; every tick: idle soldiers far away head to the rally point
 (defrule
     (up-compare-goal ov-tick c:== 1)
@@ -1347,6 +1533,31 @@
 =>
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-remove-objects ov-search-local ov-od-idling == 0)
+    (up-set-target-point ov-rally-x)
+    (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
+    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:== 2)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (up-compare-goal ov-launch c:== 0)
+    (up-compare-goal ov-reinforce c:!= 0)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
     (up-filter-distance c: ov-launch-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
