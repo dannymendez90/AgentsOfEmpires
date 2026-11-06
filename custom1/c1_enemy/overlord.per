@@ -25,10 +25,11 @@
 (defconst ov-stage-secs 240)
 (defconst ov-king-memory 180)
 (defconst ov-king-stale 90)
-(defconst ov-spy-every 180)
+(defconst ov-spy-every 600)
 (defconst ov-defend-flags 14)
 (defconst ov-cart-headroom 15)
 (defconst ov-chatty 1)
+(defconst ov-spy-cycle 4200)
 (defconst ov-fact-game-time 0)
 (defconst ov-fact-military-pop 31)
 (defconst ov-pos-center 0)
@@ -248,46 +249,64 @@
     (up-set-shared-goal c: 242 g: ov-now)
 )
 
-; ov-tmp = seconds since the king was seen, ov-tmp2 = seconds since the team's last Treason
+; Treason rota without shared state: each 10-minute slot belongs to one AI (P2, P3, ... P8, repeat). ov-tmp = seconds into my slot (0 to ov-spy-every-1 when it's my turn)
 (defrule
     (up-compare-goal ov-tick c:== 1)
 =>
     (up-get-shared-goal c: 242 ov-ktime)
-    (up-get-shared-goal c: 243 ov-spytime)
     (up-modify-goal ov-tmp g:= ov-now)
-    (up-modify-goal ov-tmp g:- ov-ktime)
-    (up-modify-goal ov-tmp2 g:= ov-now)
-    (up-modify-goal ov-tmp2 g:- ov-spytime)
+    (up-modify-goal ov-tmp c:mod ov-spy-cycle)
+    (up-modify-goal ov-tmp2 g:= ov-me)
+    (up-modify-goal ov-tmp2 c:- 2)
+    (up-modify-goal ov-tmp2 c:* ov-spy-every)
+    (up-modify-goal ov-tmp g:- ov-tmp2)
 )
 
-; Regicide: the leader researches Treason, only when nobody has seen your king for a while
+; Regicide: my slot and I haven't used Treason in it yet
 (defrule
     (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-leader c:== 1)
     (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-tmp c:> ov-king-stale)
-    (up-compare-goal ov-tmp2 c:> ov-spy-every)
+    (up-compare-goal ov-tmp c:>= 0)
+    (up-compare-goal ov-tmp c:< ov-spy-every)
+    (up-compare-goal ov-spytime c:== 0)
     (can-spy)
 =>
     (spy)
-    (up-set-shared-goal c: 243 g: ov-now)
-    (up-modify-goal ov-spytime c:= -1)
+    (up-modify-goal ov-spytime c:= 1)
+)
+
+; outside my slot: ready for my next one
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-tmp c:>= ov-spy-every)
+=>
+    (up-modify-goal ov-spytime c:= 0)
 )
 
 (defrule
     (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-spytime c:== -1)
+    (up-compare-goal ov-tmp c:< 0)
+=>
+    (up-modify-goal ov-spytime c:= 0)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-spytime c:== 1)
     (up-compare-const ov-chatty == 1)
 =>
     (up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)
+    (up-modify-goal ov-spytime c:= 2)
 )
 
-; other game modes: Spies shows everything your units see
+; other game modes only: Spies once (in Regicide this tech is Treason, handled above)
 (defrule
+    (not (regicide-game))
     (up-compare-goal ov-phase c:>= 1)
     (can-research ov-ri-spies)
 =>
     (research ov-ri-spies)
+    (disable-self)
 )
 
 ; leader election: first AI to find no living leader takes over

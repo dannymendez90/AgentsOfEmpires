@@ -5,9 +5,9 @@ allied, usually with a truce (treaty) at the start.
 
 What the generated rules do (on top of the stock Promisory AI):
   * Every AI targets player 1 and they elect a leader through shared goals.
-  * Finding the king: every AI reports when it sees your king. When nobody has
-    seen him for a while, the leader researches Treason (Regicide),
-    which reveals your king. In non-Regicide games they research Spies once.
+  * Finding the king: every AI reports when it sees your king. Treason (Regicide)
+    reveals him: the AIs take turns, one use every ov-spy-every seconds
+    (P2's slot, then P3's, ... P8's, repeat). Non-Regicide games: Spies once.
     A king sighting stays the attack target for ov-king-memory seconds;
     otherwise the target is your nearest building.
   * Truce: armies start moving to the rally point ov-stage-secs before the
@@ -61,12 +61,14 @@ TUNING = {
     "ov-march-formation": -1,   # formation used to reach the rally (-1 none)
     "ov-stage-secs": 240,       # start gathering this long before the truce ends
     "ov-king-memory": 180,      # a king sighting stays the target this long
-    "ov-king-stale": 90,        # research Treason when the king's unseen this long
-    "ov-spy-every": 180,        # minimum gap between Treason researches
+    "ov-king-stale": 90,        # "king spotted" is announced after this long unseen
+    "ov-spy-every": 600,        # the team uses Treason once per this many seconds
     "ov-defend-flags": 14,      # sn-disable-defend-groups while the coalition runs
     "ov-cart-headroom": 15,     # delete idle carts when pop headroom is below
     "ov-chatty": 1,             # 1 = announce phases and Treason in chat
 }
+
+TUNING["ov-spy-cycle"] = TUNING["ov-spy-every"] * 7   # a full rota over players 2-8
 
 # Game constants, under our own names so nothing depends on other files.
 GAME = {
@@ -228,21 +230,27 @@ rule(["(up-compare-goal ov-ss-remote c:>= 1)"], [
     f"(up-set-shared-goal c: {SHARED['KTIME']} g: ov-now)",
 ])
 rule([TICK], [
-    sget(SHARED["KTIME"], "ov-ktime"), sget(SHARED["SPYTIME"], "ov-spytime"),
-    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-ktime)",
-    "(up-modify-goal ov-tmp2 g:= ov-now)", "(up-modify-goal ov-tmp2 g:- ov-spytime)",
-], "ov-tmp = seconds since the king was seen, ov-tmp2 = seconds since the team's last Treason")
-rule([TICK, LEAD, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:> ov-king-stale)",
-      "(up-compare-goal ov-tmp2 c:> ov-spy-every)", "(can-spy)"], [
+    sget(SHARED["KTIME"], "ov-ktime"),
+    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp c:mod ov-spy-cycle)",
+    "(up-modify-goal ov-tmp2 g:= ov-me)", "(up-modify-goal ov-tmp2 c:- 2)",
+    "(up-modify-goal ov-tmp2 c:* ov-spy-every)", "(up-modify-goal ov-tmp g:- ov-tmp2)",
+], "Treason rota without shared state: each 10-minute slot belongs to one AI (P2, P3, ... P8, repeat). "
+   "ov-tmp = seconds into my slot (0 to ov-spy-every-1 when it's my turn)")
+rule([TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:>= 0)",
+      "(up-compare-goal ov-tmp c:< ov-spy-every)", "(up-compare-goal ov-spytime c:== 0)", "(can-spy)"], [
     "(spy)",
-    f"(up-set-shared-goal c: {SHARED['SPYTIME']} g: ov-now)",
-    "(up-modify-goal ov-spytime c:= -1)",
-], "Regicide: the leader researches Treason, only when nobody has seen your king for a while")
-rule([TICK, "(up-compare-goal ov-spytime c:== -1)", CHATTY], [
+    "(up-modify-goal ov-spytime c:= 1)",
+], "Regicide: my slot and I haven't used Treason in it yet")
+rule([TICK, "(up-compare-goal ov-tmp c:>= ov-spy-every)"], ["(up-modify-goal ov-spytime c:= 0)"],
+     "outside my slot: ready for my next one")
+rule([TICK, "(up-compare-goal ov-tmp c:< 0)"], ["(up-modify-goal ov-spytime c:= 0)"])
+rule([TICK, "(up-compare-goal ov-spytime c:== 1)", CHATTY], [
     '(up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)',
+    "(up-modify-goal ov-spytime c:= 2)",
 ])
-rule(["(up-compare-goal ov-phase c:>= 1)", "(can-research ov-ri-spies)"], ["(research ov-ri-spies)"],
-     "other game modes: Spies shows everything your units see")
+rule(["(not (regicide-game))", "(up-compare-goal ov-phase c:>= 1)", "(can-research ov-ri-spies)"],
+     ["(research ov-ri-spies)", "(disable-self)"],
+     "other game modes only: Spies once (in Regicide this tech is Treason, handled above)")
 
 # ------------------------------------------------------- leader election
 rule([TICK], [

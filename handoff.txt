@@ -1,5 +1,5 @@
 HANDOFF - Custom1 coalition AI (AoE2 DE)
-Last updated: 2026-11-02
+Last updated: 2026-11-06
 
 GOAL
   An AI for the user's custom games. The user (player 1) plays an "overlord":
@@ -10,7 +10,7 @@ GOAL
   resources run out (they get abundant resources).
 
 CURRENT STATE
-  Branch custom1-coalition-ai, latest commit e13829d. NOT pushed yet: GitHub
+  Branch custom1-coalition-ai (see git log for the latest commit). NOT pushed yet: GitHub
     rejected the saved login (HTTPS, Git Credential Manager; no SSH keys, no
     gh CLI). The user must sign in once:
       git -C C:/Users/danny/proj/AgentsOfEmpires push -u origin custom1-coalition-ai
@@ -55,8 +55,10 @@ KEY FILES / LOCATIONS
 COALITION DESIGN (overlord.per, v2)
   - Target and focus are always player 1. The leader is elected through shared goals (heartbeats).
   - King: every AI scans for the king (class 959) on every pass and shares KX/KY/KTIME.
-    The leader researches Treason with (spy) only when the king has been unseen for 90s
-    (ov-king-stale), and at most once every 180s (ov-spy-every). A sighting stays the
+    Treason with (spy): a fixed rota with no shared state. Each 600s slot (ov-spy-every)
+    belongs to one AI (P2..P8, repeating), and that AI uses Treason once in its slot. Dead or
+    castle-less AIs skip their slot. FIXED BUG: the "Spies" rule (research 408) is Treason in
+    Regicide, so every AI was spamming it; it's now limited to non-Regicide games. A sighting stays the
     target for 180s. Otherwise the target is the nearest building, falling back to the
     start position (position-focus) during the truce.
   - Rally point: ov-rally-dist (35) tiles in front of the target, toward the leader's base.
@@ -96,7 +98,9 @@ OPEN ITEMS / IDEAS
       do armies flow through chokes?
       does each wave hit together?
       is formation size (up to 240 units) clunky?
-      after "used Treason", does "king spotted" follow?
+      Treason should appear about once every 10 minutes; after "used Treason", does "king spotted" follow?
+      Shared goals: if "ATTACK! wave N" shows several times per wave, shared goals aren't
+        shared between AIs (each one thinks it's the leader), so coordination is broken.
       are AI towns now too passive on defense?
   - Possible next steps:
       better army composition (more siege, upgrades)
