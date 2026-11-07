@@ -10,8 +10,16 @@ What the generated rules do (on top of the stock Promisory AI):
     (P2's slot, then P3's, ... P8's, repeat). Non-Regicide games: Spies once.
     A king sighting stays the attack target for ov-king-memory seconds;
     otherwise the target is your nearest building.
-  * Truce: armies start moving to the rally point ov-stage-secs before the
-    truce ends and attack together the moment it ends.
+  * Truce: armies start moving to their rally points ov-stage-secs before the
+    truce ends and attack together the moment it ends. The game's truce
+    reading didn't count down in testing, so the time left is the smallest of
+    that reading, first-reading-minus-elapsed, and ov-truce-max-minus-elapsed.
+  * Routes: each AI has its own rally point on its side of the target,
+    shifted sideways by player number, so the armies don't share one road.
+  * Spies (castle tech 408) once per AI. Treason every ov-spy-every seconds
+    on a rota (spy command, or tech 408 again if the command is unavailable).
+  * With plenty of resources stockpiled, new lumber/mining camps must stay
+    close to a town center instead of sprawling over the open routes.
   * Phases, shared by the whole team:
       GATHER - every soldier marches to a rally point in front of the target
                (no formation, so they flow through chokes). Idle soldiers
@@ -66,6 +74,10 @@ TUNING = {
     "ov-defend-flags": 14,      # sn-disable-defend-groups while the coalition runs
     "ov-cart-headroom": 15,     # delete idle carts when pop headroom is below
     "ov-chatty": 1,             # 1 = announce phases and Treason in chat
+    "ov-truce-max": 1800,       # never wait longer than this for the truce (your 30-min truce)
+    "ov-spread": 8,             # sideways tiles between the AIs' approach routes
+    "ov-plenty": 3000,          # with this much wood (or gold+stone) stockpiled...
+    "ov-camp-dist": 12,         # ...new lumber/mining camps stay this close to a town center
 }
 
 TUNING["ov-spy-cycle"] = TUNING["ov-spy-every"] * 7   # a full rota over players 2-8
@@ -104,7 +116,7 @@ GOALS = {
 SHARED = {
     "LEADER": 200, "LEADTIME": 201, "PHASE": 202, "WAVE": 203,
     "RX": 204, "RY": 205, "TX": 206, "TY": 207, "PHASESTART": 208, "ARMYSTART": 209,
-    "KX": 240, "KY": 241, "KTIME": 242, "SPYTIME": 243,
+    "KX": 240, "KY": 241, "KTIME": 242, "SPYTIME": 243, "TEND": 244,
 }
 HB, READY, ARMY = 210, 220, 230   # + player number
 
@@ -195,6 +207,28 @@ rule(["(up-compare-goal ov-now g:>= ov-next-tick)"], [
 ])
 rule([TICK, "(up-compare-goal ov-slow c:>= ov-cmd-every)"], ["(up-modify-goal ov-slow c:= 0)"])
 
+# Truce: the game's reading didn't count down in testing, so take the smallest of
+# (game reading, first reading minus elapsed time, ov-truce-max minus elapsed time).
+rule([TICK, "(up-compare-goal ov-treaty c:> 36000)"], ["(up-modify-goal ov-treaty c:/ 1000)"],
+     "truce: a reading in milliseconds becomes seconds")
+rule([TICK], [sget(SHARED["TEND"], "ov-tmp2")])
+rule([TICK, "(up-compare-goal ov-tmp2 c:<= 0)", "(up-compare-goal ov-now c:>= 2)"], [
+    "(up-modify-goal ov-tmp2 g:= ov-treaty)", "(up-modify-goal ov-tmp2 g:+ ov-now)",
+    "(up-modify-goal ov-tmp2 c:+ 1)",
+    f"(up-set-shared-goal c: {SHARED['TEND']} g: ov-tmp2)",
+], "truce: remember when it should end, from the first reading")
+rule([TICK, "(up-compare-goal ov-tmp2 c:> 0)"], [
+    "(up-modify-goal ov-tmp g:= ov-tmp2)", "(up-modify-goal ov-tmp g:- ov-now)",
+    "(up-modify-goal ov-treaty g:min ov-tmp)",
+    "(up-modify-goal ov-tmp c:= ov-truce-max)", "(up-modify-goal ov-tmp g:- ov-now)",
+    "(up-modify-goal ov-treaty g:min ov-tmp)",
+    "(up-modify-goal ov-treaty c:max 0)",
+], "truce: ov-treaty = seconds left")
+rule([TICK, "(up-compare-goal ov-now c:>= 10)", "(up-compare-goal ov-me c:== 2)", CHATTY], [
+    '(up-chat-data-to-all "c1_enemy: truce timer reads %d seconds left" g: ov-treaty)',
+    "(disable-self)",
+], "one-time check you can read in chat")
+
 rule(["(up-compare-goal ov-me c:>= 1)", "(up-compare-goal ov-now c:>= 3)", CHATTY], [
     '(up-chat-data-to-all "c1_enemy: player %d joined the coalition" g: ov-me)',
     "(disable-self)",
@@ -241,6 +275,12 @@ rule([TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:>= 0
     "(spy)",
     "(up-modify-goal ov-spytime c:= 1)",
 ], "Regicide: my slot and I haven't used Treason in it yet")
+rule([TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:>= 0)",
+      "(up-compare-goal ov-tmp c:< ov-spy-every)", "(up-compare-goal ov-spytime c:== 0)",
+      "(not (can-spy))", "(can-research ov-ri-spies)"], [
+    "(research ov-ri-spies)",
+    "(up-modify-goal ov-spytime c:= 1)",
+], "fallback: in testing the castle tech itself acted as Treason, so use it if the spy command can't")
 rule([TICK, "(up-compare-goal ov-tmp c:>= ov-spy-every)"], ["(up-modify-goal ov-spytime c:= 0)"],
      "outside my slot: ready for my next one")
 rule([TICK, "(up-compare-goal ov-tmp c:< 0)"], ["(up-modify-goal ov-spytime c:= 0)"])
@@ -248,9 +288,10 @@ rule([TICK, "(up-compare-goal ov-spytime c:== 1)", CHATTY], [
     '(up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)',
     "(up-modify-goal ov-spytime c:= 2)",
 ])
-rule(["(not (regicide-game))", "(up-compare-goal ov-phase c:>= 1)", "(can-research ov-ri-spies)"],
-     ["(research ov-ri-spies)", "(disable-self)"],
-     "other game modes only: Spies once (in Regicide this tech is Treason, handled above)")
+rule(["(up-compare-goal ov-phase c:>= 1)", "(can-research ov-ri-spies)"],
+     ["(research ov-ri-spies)", '(up-chat-data-to-all "c1_enemy: player %d researched Spies" g: ov-me)',
+      "(disable-self)"],
+     "Spies: once per AI, stays active (shows everything your units see)")
 
 # ------------------------------------------------------- leader election
 rule([TICK], [
@@ -291,10 +332,8 @@ for p in range(1, 9):
 # ------------------------------------------- leader: target + rally point
 rule([TICK, LEAD], [
     sget(SHARED["PHASE"], "ov-phase"),
-    "(up-get-point ov-pos-self ov-home-x)",
     "(up-get-point ov-pos-target ov-tgt-x)",
 ], "leader: default target is your nearest building")
-rule([TICK, LEAD, "(up-compare-goal ov-home-x c:< 0)"], ["(up-get-point ov-pos-center ov-home-x)"])
 rule([TICK, LEAD, "(up-compare-goal ov-tgt-x c:< 0)"], ["(up-get-point ov-pos-focus ov-tgt-x)"],
      "no target yet (for example during the truce): use your start position")
 rule([TICK, LEAD, "(up-compare-goal ov-ktime c:> 0)"], [
@@ -304,19 +343,14 @@ rule([TICK, LEAD, "(up-compare-goal ov-ktime c:> 0)", "(up-compare-goal ov-tmp c
     sget(SHARED["KX"], "ov-tgt-x"), sget(SHARED["KY"], "ov-tgt-y"),
 ])
 rule([TICK, LEAD, "(up-compare-goal ov-tgt-x c:>= 0)", "(up-compare-goal ov-tgt-y c:>= 0)"], [
+    sget(SHARED["TX"], "ov-home-x"), sget(SHARED["TY"], "ov-home-y"),
+    "(up-get-point-distance ov-tgt-x ov-home-x ov-dist)",
+])
+rule([TICK, LEAD, "(up-compare-goal ov-tgt-x c:>= 0)", "(up-compare-goal ov-tgt-y c:>= 0)",
+      "(or (up-compare-goal ov-home-x c:<= 0) (up-compare-goal ov-dist c:> ov-rally-move))"], [
     f"(up-set-shared-goal c: {SHARED['TX']} g: ov-tgt-x)",
     f"(up-set-shared-goal c: {SHARED['TY']} g: ov-tgt-y)",
-    "(up-modify-goal ov-rally-x g:= ov-tgt-x)", "(up-modify-goal ov-rally-y g:= ov-tgt-y)",
-    "(up-lerp-tiles ov-rally-x ov-home-x c: ov-rally-dist)",
-    "(up-bound-point ov-rally-x ov-rally-x)",
-    sget(SHARED["RX"], "ov-home-x"), sget(SHARED["RY"], "ov-home-y"),
-    "(up-get-point-distance ov-rally-x ov-home-x ov-dist)",
-], "leader: rally point sits ov-rally-dist tiles in front of the target, toward the leader's base")
-rule([TICK, LEAD, "(up-compare-goal ov-tgt-x c:>= 0)",
-      "(or (up-compare-goal ov-home-x c:<= 0) (up-compare-goal ov-dist c:> ov-rally-move))"], [
-    f"(up-set-shared-goal c: {SHARED['RX']} g: ov-rally-x)",
-    f"(up-set-shared-goal c: {SHARED['RY']} g: ov-rally-y)",
-], "...but only move it when it shifts noticeably, so marching armies aren't re-ordered for nothing")
+], "leader: share the target, but only move it when it shifts noticeably, so armies aren't re-ordered for nothing")
 
 # ---------------------------------------------------- leader: phase logic
 rule([TICK, LEAD, "(up-compare-goal ov-phase c:== 0)", "(up-compare-goal ov-treaty c:<= ov-stage-secs)"], [
@@ -362,9 +396,19 @@ rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {ATTACK})",
 # ------------------------------------------------- every AI: read the plan
 rule([TICK], [
     sget(SHARED["PHASE"], "ov-phase"),
-    sget(SHARED["RX"], "ov-rally-x"), sget(SHARED["RY"], "ov-rally-y"),
     sget(SHARED["TX"], "ov-tgt-x"), sget(SHARED["TY"], "ov-tgt-y"),
+    "(up-get-point ov-pos-self ov-home-x)",
 ], "every AI: read the shared plan")
+rule([TICK, "(up-compare-goal ov-home-x c:< 0)"], ["(up-get-point ov-pos-center ov-home-x)"])
+rule([TICK, "(up-compare-goal ov-tgt-x c:> 0)"], [
+    "(up-modify-goal ov-rally-x g:= ov-tgt-x)", "(up-modify-goal ov-rally-y g:= ov-tgt-y)",
+    "(up-lerp-tiles ov-rally-x ov-home-x c: ov-rally-dist)",
+    "(up-modify-goal ov-tmp g:= ov-me)", "(up-modify-goal ov-tmp c:- 5)",
+    "(up-modify-goal ov-tmp c:* ov-spread)",
+    "(up-cross-tiles ov-rally-x ov-tgt-x g: ov-tmp)",
+    "(up-bound-point ov-rally-x ov-rally-x)",
+], "my own rally point: in front of the target on my side, shifted sideways by player number, "
+   "so the seven armies use different routes and hit from several sides")
 rule([TICK, "(up-compare-goal ov-phase g:!= ov-last-phase)"], [
     "(up-modify-goal ov-pulses c:= 0)", "(up-modify-goal ov-regroup-first c:= 0)",
     *per_player_slot(READY), "(up-set-shared-goal g: ov-idx c: 0)",
@@ -397,6 +441,15 @@ rule(["(up-compare-goal ov-phase c:>= 1)"], [
     "(set-strategic-number sn-number-tasked-units 0)",
     "(set-strategic-number sn-enable-patrol-attack 1)",
 ], "coalition running: no stock attack groups, town-spreading or far defend-assists")
+
+# ------------------------------------- keep new camps off the open routes
+rule(["(wood-amount >= ov-plenty)"], ["(set-strategic-number sn-lumber-camp-max-distance ov-camp-dist)"],
+     "plenty of wood: new lumber camps only right next to a town center")
+rule(["(wood-amount < ov-plenty)"], ["(set-strategic-number sn-lumber-camp-max-distance 0)"])
+rule(["(gold-amount >= ov-plenty)", "(stone-amount >= ov-plenty)"],
+     ["(set-strategic-number sn-mining-camp-max-distance ov-camp-dist)"])
+rule(["(or (gold-amount < ov-plenty) (stone-amount < ov-plenty))"],
+     ["(set-strategic-number sn-mining-camp-max-distance 0)"])
 
 # ------------------------------------------- army management (pop space)
 rule([*CMD, "(population-headroom < ov-cart-headroom)",

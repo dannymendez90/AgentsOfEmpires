@@ -1,5 +1,5 @@
 HANDOFF - Custom1 coalition AI (AoE2 DE)
-Last updated: 2026-11-06
+Last updated: 2026-11-07
 
 GOAL
   An AI for the user's custom games. The user (player 1) plays an "overlord":
@@ -110,3 +110,28 @@ OPEN ITEMS / IDEAS
       protecting their own kings
       tuning distances and timings
   - Optionally remove c1_ally from install.py and the repo.
+
+SESSION 2026-11-07 (v3)
+  Test of v2 (rec.aoe2record, 2026-11-06): the coalition NEVER started. There was no
+    "gathering", "ATTACK" or Treason chat all game, so phase stayed 0 (stock AI only).
+    Cause: up-get-treaty-data never dropped to 240 or below. Leader election and shared
+    goals DID work (a single "king spotted" came from P4).
+  Fixes:
+    - Truce: seconds left = min(game reading, first reading minus elapsed, ov-truce-max
+      (1800) minus elapsed). Shared goal 244 = TEND.
+      Chat at 10s from P2: "truce timer reads N seconds left". Check it's about 1790.
+    - Spies/Treason: the game data has ONE castle tech, 408 "Spies/Treason" (strings
+      "Research Treason" 40112 and "Research Spies" 40113 exist). Earlier spam came from
+      repeated research of 408, so in Regicide 408 behaves as Treason.
+      Now: research 408 once per AI ("researched Spies" chat), and Treason on the
+      10-minute rota via (spy), or research 408 if can-spy is false.
+      The user says Spies (one-time, permanent) and Treason (repeatable) are separate
+      buttons. Still unverified which one the AI's research 408 triggers.
+    - Routes: each AI has its own rally, ov-rally-dist in front of the target toward its
+      own base, plus a sideways offset of (player-5)*ov-spread tiles. Shared RX/RY no
+      longer used.
+    - Camps: with 3000+ wood (or gold AND stone), sn-lumber/mining-camp-max-distance = 12,
+      so new camps stay by a town center.
+  Real path-cost control isn't possible in AI scripts; the engine's pathfinder picks routes.
+  The user plans to remove markets from the map (fewer trade carts and less clutter).
+  Recording parsing: mgz.fast.meta + operation loop works on rec.aoe2record; chat shows AI messages.

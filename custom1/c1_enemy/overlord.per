@@ -29,6 +29,10 @@
 (defconst ov-defend-flags 14)
 (defconst ov-cart-headroom 15)
 (defconst ov-chatty 1)
+(defconst ov-truce-max 1800)
+(defconst ov-spread 8)
+(defconst ov-plenty 3000)
+(defconst ov-camp-dist 12)
 (defconst ov-spy-cycle 4200)
 (defconst ov-fact-game-time 0)
 (defconst ov-fact-military-pop 31)
@@ -189,6 +193,57 @@
     (up-modify-goal ov-slow c:= 0)
 )
 
+; truce: a reading in milliseconds becomes seconds
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-treaty c:> 36000)
+=>
+    (up-modify-goal ov-treaty c:/ 1000)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+=>
+    (up-get-shared-goal c: 244 ov-tmp2)
+)
+
+; truce: remember when it should end, from the first reading
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-tmp2 c:<= 0)
+    (up-compare-goal ov-now c:>= 2)
+=>
+    (up-modify-goal ov-tmp2 g:= ov-treaty)
+    (up-modify-goal ov-tmp2 g:+ ov-now)
+    (up-modify-goal ov-tmp2 c:+ 1)
+    (up-set-shared-goal c: 244 g: ov-tmp2)
+)
+
+; truce: ov-treaty = seconds left
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-tmp2 c:> 0)
+=>
+    (up-modify-goal ov-tmp g:= ov-tmp2)
+    (up-modify-goal ov-tmp g:- ov-now)
+    (up-modify-goal ov-treaty g:min ov-tmp)
+    (up-modify-goal ov-tmp c:= ov-truce-max)
+    (up-modify-goal ov-tmp g:- ov-now)
+    (up-modify-goal ov-treaty g:min ov-tmp)
+    (up-modify-goal ov-treaty c:max 0)
+)
+
+; one-time check you can read in chat
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now c:>= 10)
+    (up-compare-goal ov-me c:== 2)
+    (up-compare-const ov-chatty == 1)
+=>
+    (up-chat-data-to-all "c1_enemy: truce timer reads %d seconds left" g: ov-treaty)
+    (disable-self)
+)
+
 (defrule
     (up-compare-goal ov-me c:>= 1)
     (up-compare-goal ov-now c:>= 3)
@@ -275,6 +330,20 @@
     (up-modify-goal ov-spytime c:= 1)
 )
 
+; fallback: in testing the castle tech itself acted as Treason, so use it if the spy command can't
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:>= 1)
+    (up-compare-goal ov-tmp c:>= 0)
+    (up-compare-goal ov-tmp c:< ov-spy-every)
+    (up-compare-goal ov-spytime c:== 0)
+    (not (can-spy))
+    (can-research ov-ri-spies)
+=>
+    (research ov-ri-spies)
+    (up-modify-goal ov-spytime c:= 1)
+)
+
 ; outside my slot: ready for my next one
 (defrule
     (up-compare-goal ov-tick c:== 1)
@@ -299,13 +368,13 @@
     (up-modify-goal ov-spytime c:= 2)
 )
 
-; other game modes only: Spies once (in Regicide this tech is Treason, handled above)
+; Spies: once per AI, stays active (shows everything your units see)
 (defrule
-    (not (regicide-game))
     (up-compare-goal ov-phase c:>= 1)
     (can-research ov-ri-spies)
 =>
     (research ov-ri-spies)
+    (up-chat-data-to-all "c1_enemy: player %d researched Spies" g: ov-me)
     (disable-self)
 )
 
@@ -650,16 +719,7 @@
     (up-compare-goal ov-leader c:== 1)
 =>
     (up-get-shared-goal c: 202 ov-phase)
-    (up-get-point ov-pos-self ov-home-x)
     (up-get-point ov-pos-target ov-tgt-x)
-)
-
-(defrule
-    (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-leader c:== 1)
-    (up-compare-goal ov-home-x c:< 0)
-=>
-    (up-get-point ov-pos-center ov-home-x)
 )
 
 ; no target yet (for example during the truce): use your start position
@@ -691,33 +751,27 @@
     (up-get-shared-goal c: 241 ov-tgt-y)
 )
 
-; leader: rally point sits ov-rally-dist tiles in front of the target, toward the leader's base
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-leader c:== 1)
     (up-compare-goal ov-tgt-x c:>= 0)
     (up-compare-goal ov-tgt-y c:>= 0)
 =>
-    (up-set-shared-goal c: 206 g: ov-tgt-x)
-    (up-set-shared-goal c: 207 g: ov-tgt-y)
-    (up-modify-goal ov-rally-x g:= ov-tgt-x)
-    (up-modify-goal ov-rally-y g:= ov-tgt-y)
-    (up-lerp-tiles ov-rally-x ov-home-x c: ov-rally-dist)
-    (up-bound-point ov-rally-x ov-rally-x)
-    (up-get-shared-goal c: 204 ov-home-x)
-    (up-get-shared-goal c: 205 ov-home-y)
-    (up-get-point-distance ov-rally-x ov-home-x ov-dist)
+    (up-get-shared-goal c: 206 ov-home-x)
+    (up-get-shared-goal c: 207 ov-home-y)
+    (up-get-point-distance ov-tgt-x ov-home-x ov-dist)
 )
 
-; ...but only move it when it shifts noticeably, so marching armies aren't re-ordered for nothing
+; leader: share the target, but only move it when it shifts noticeably, so armies aren't re-ordered for nothing
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-leader c:== 1)
     (up-compare-goal ov-tgt-x c:>= 0)
+    (up-compare-goal ov-tgt-y c:>= 0)
     (or (up-compare-goal ov-home-x c:<= 0) (up-compare-goal ov-dist c:> ov-rally-move))
 =>
-    (up-set-shared-goal c: 204 g: ov-rally-x)
-    (up-set-shared-goal c: 205 g: ov-rally-y)
+    (up-set-shared-goal c: 206 g: ov-tgt-x)
+    (up-set-shared-goal c: 207 g: ov-tgt-y)
 )
 
 ; leader: start the first gather (right away, or near the end of the truce)
@@ -807,10 +861,31 @@
     (up-compare-goal ov-tick c:== 1)
 =>
     (up-get-shared-goal c: 202 ov-phase)
-    (up-get-shared-goal c: 204 ov-rally-x)
-    (up-get-shared-goal c: 205 ov-rally-y)
     (up-get-shared-goal c: 206 ov-tgt-x)
     (up-get-shared-goal c: 207 ov-tgt-y)
+    (up-get-point ov-pos-self ov-home-x)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-home-x c:< 0)
+=>
+    (up-get-point ov-pos-center ov-home-x)
+)
+
+; my own rally point: in front of the target on my side, shifted sideways by player number, so the seven armies use different routes and hit from several sides
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-tgt-x c:> 0)
+=>
+    (up-modify-goal ov-rally-x g:= ov-tgt-x)
+    (up-modify-goal ov-rally-y g:= ov-tgt-y)
+    (up-lerp-tiles ov-rally-x ov-home-x c: ov-rally-dist)
+    (up-modify-goal ov-tmp g:= ov-me)
+    (up-modify-goal ov-tmp c:- 5)
+    (up-modify-goal ov-tmp c:* ov-spread)
+    (up-cross-tiles ov-rally-x ov-tgt-x g: ov-tmp)
+    (up-bound-point ov-rally-x ov-rally-x)
 )
 
 ; phase changed: reset my ready flag and pulse count
@@ -891,6 +966,32 @@
     (set-strategic-number sn-disable-defend-groups ov-defend-flags)
     (set-strategic-number sn-number-tasked-units 0)
     (set-strategic-number sn-enable-patrol-attack 1)
+)
+
+; plenty of wood: new lumber camps only right next to a town center
+(defrule
+    (wood-amount >= ov-plenty)
+=>
+    (set-strategic-number sn-lumber-camp-max-distance ov-camp-dist)
+)
+
+(defrule
+    (wood-amount < ov-plenty)
+=>
+    (set-strategic-number sn-lumber-camp-max-distance 0)
+)
+
+(defrule
+    (gold-amount >= ov-plenty)
+    (stone-amount >= ov-plenty)
+=>
+    (set-strategic-number sn-mining-camp-max-distance ov-camp-dist)
+)
+
+(defrule
+    (or (gold-amount < ov-plenty) (stone-amount < ov-plenty))
+=>
+    (set-strategic-number sn-mining-camp-max-distance 0)
 )
 
 ; at the pop cap, idle trade carts give their population to soldiers
