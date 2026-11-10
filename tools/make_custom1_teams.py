@@ -15,6 +15,7 @@ import io
 import os
 import sys
 
+from AoE2ScenarioParser.datasets.buildings import BuildingInfo
 from AoE2ScenarioParser.datasets.players import AiType
 from AoE2ScenarioParser.datasets.trigger_lists import DiplomacyState
 from AoE2ScenarioParser.scenarios.aoe2_de_scenario import AoE2DEScenario
@@ -48,6 +49,14 @@ for team, enemies in ((TEAM_A, TEAM_B), (TEAM_B, TEAM_A)):
         p.allied_victory = True
         if pid != 1 and p.ai_type != AiType.STANDARD:
             print(f"note: player {pid} has AI type {p.ai_type.name}; lobby AI choice may be fixed")
+
+# Buildings the AIs may not build. They use the markets and monasteries placed
+# on the map instead (no conversion strats, no market sprawl on the routes).
+if ONE_V_SEVEN:
+    AI_DISABLED = [BuildingInfo.MONASTERY.ID, BuildingInfo.DOCK.ID, BuildingInfo.MARKET.ID]
+    for pid in TEAM_B:
+        p = players[pid]
+        p.disabled_buildings = sorted(set(p.disabled_buildings) | set(AI_DISABLED))
 
 # Lock teams so lobby team settings can't override the scenario's diplomacy.
 options = scenario.option_manager

@@ -135,3 +135,14 @@ SESSION 2026-11-07 (v3)
   Real path-cost control isn't possible in AI scripts; the engine's pathfinder picks routes.
   The user plans to remove markets from the map (fewer trade carts and less clutter).
   Recording parsing: mgz.fast.meta + operation loop works on rec.aoe2record; chat shows AI messages.
+
+SESSION 2026-11-10
+  Save/trigger analysis: the user's spawned units have 15,000 HP and 2,000-6,000 HP/min regen. The king
+    and queen are not buffed. The king's resource pad gives +1M of each resource per second. The QUEEN
+    on the resource pad SETS players 2-8's food/wood/stone/gold to 0. In the 6.5-hour Nov 6 game the
+    AIs ended with no food, wood or gold (only stone).
+  The user disallows monasteries (and uses unconvertible heroes), so don't suggest monk strategies.
+  make_custom1_teams.py --1v7 now disables MONASTERY, DOCK and MARKET for players 2-8. Player 2
+    previously had nothing disabled because it was the old ally slot.
+  The user will now hand-edit Custom1_1v7 in the editor to place markets. Don't regenerate it with
+    the script after that, or their edits are lost.
