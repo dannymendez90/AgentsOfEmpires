@@ -1,5 +1,5 @@
 HANDOFF - Custom1 coalition AI (AoE2 DE)
-Last updated: 2026-11-07
+Last updated: 2026-11-17
 
 GOAL
   An AI for the user's custom games. The user (player 1) plays an "overlord":
@@ -146,3 +146,24 @@ SESSION 2026-11-10
     previously had nothing disabled because it was the old ally slot.
   The user will now hand-edit Custom1_1v7 in the editor to place markets. Don't regenerate it with
     the script after that, or their edits are lost.
+
+SESSION 2026-11-17 (v4)
+  Playtest (rec.aoe2record, 2026-11-15, 5h16m). User feedback: attacks started after the
+    truce, but no waves/formations; the AIs hit 3-4 different spots (the per-AI sideways
+    rally spread); they attacked the nearest building, not the king; Treason/Spies never fired.
+  The recording contains NO AI chat at all (not even "joined the coalition"), unlike the
+    Nov 6 one. Unknown whether DE stopped recording AI chat or the overlord didn't run.
+    Asked the user whether the c1_enemy chat lines showed in game.
+  Changes:
+    - Treason: one shared clock (shared goal 243 SPYNEXT) instead of the per-AI rota. The first
+      AI with a castle uses it when due; every 900s (15 min). The first one fires 30s before
+      the truce ends. Gold is topped up with cc-add-resource (cheat) to 1000 when due.
+      Leader chats once if Treason is 90s overdue (no castles).
+    - The separate one-time "Spies" research was removed: in Regicide tech 408 IS Treason.
+    - Launch (attack start, king found, king moved >12 tiles): EVERY soldier, any distance,
+      even if fighting, attack-moves to the target. Reinforcements also attack-move to the rally.
+    - A fresh king sighting during a regroup switches straight to ATTACK.
+    - King sighting is the target for 900s (until the next Treason).
+    - ov-spread 0 (no sideways offset). Formation 4 (box) for march and attack. AoE2 has no
+      column formation; up-target-point splits orders into groups of <=20, so a box order gives
+      a column of tight blocks.

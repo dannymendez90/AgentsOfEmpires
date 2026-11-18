@@ -17,23 +17,24 @@
 (defconst ov-rally-move 12)
 (defconst ov-near-dist 20)
 (defconst ov-arrived-dist 8)
-(defconst ov-launch-radius 60)
+(defconst ov-front-radius 60)
 (defconst ov-retarget-dist 12)
 (defconst ov-reinforce-every 6)
-(defconst ov-attack-formation 2)
-(defconst ov-march-formation -1)
+(defconst ov-attack-formation 4)
+(defconst ov-march-formation 4)
 (defconst ov-stage-secs 240)
-(defconst ov-king-memory 180)
+(defconst ov-king-memory 900)
 (defconst ov-king-stale 90)
-(defconst ov-spy-every 600)
+(defconst ov-spy-every 900)
+(defconst ov-spy-lead 30)
+(defconst ov-spy-gold 1000)
 (defconst ov-defend-flags 14)
 (defconst ov-cart-headroom 15)
 (defconst ov-chatty 1)
 (defconst ov-truce-max 1800)
-(defconst ov-spread 8)
+(defconst ov-spread 0)
 (defconst ov-plenty 3000)
 (defconst ov-camp-dist 12)
-(defconst ov-spy-cycle 4200)
 (defconst ov-fact-game-time 0)
 (defconst ov-fact-military-pop 31)
 (defconst ov-pos-center 0)
@@ -63,6 +64,7 @@
 (defconst ov-unpacked-treb-class 954)
 (defconst ov-idle-trade-cart 1)
 (defconst ov-ri-spies 408)
+(defconst ov-castle 82)
 (defconst ov-now 402)
 (defconst ov-me 403)
 (defconst ov-next-tick 404)
@@ -304,77 +306,80 @@
     (up-set-shared-goal c: 242 g: ov-now)
 )
 
-; Treason rota without shared state: each 10-minute slot belongs to one AI (P2, P3, ... P8, repeat). ov-tmp = seconds into my slot (0 to ov-spy-every-1 when it's my turn)
+; Treason: one shared clock for the team (SPYNEXT = game time the next one is due)
 (defrule
     (up-compare-goal ov-tick c:== 1)
 =>
     (up-get-shared-goal c: 242 ov-ktime)
-    (up-modify-goal ov-tmp g:= ov-now)
-    (up-modify-goal ov-tmp c:mod ov-spy-cycle)
-    (up-modify-goal ov-tmp2 g:= ov-me)
-    (up-modify-goal ov-tmp2 c:- 2)
-    (up-modify-goal ov-tmp2 c:* ov-spy-every)
-    (up-modify-goal ov-tmp g:- ov-tmp2)
+    (up-get-shared-goal c: 243 ov-spytime)
 )
 
-; Regicide: my slot and I haven't used Treason in it yet
+; Treason due and I have a castle: make sure the gold is there (the queen's pad can drain it)
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-tmp c:>= 0)
-    (up-compare-goal ov-tmp c:< ov-spy-every)
-    (up-compare-goal ov-spytime c:== 0)
+    (up-compare-goal ov-treaty c:<= ov-spy-lead)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (gold-amount < ov-spy-gold)
+=>
+    (cc-add-resource gold ov-spy-gold)
+)
+
+; the first AI with a castle uses Treason; the shared clock stops the others until the next one
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-phase c:>= 1)
+    (up-compare-goal ov-treaty c:<= ov-spy-lead)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
     (can-spy)
 =>
     (spy)
-    (up-modify-goal ov-spytime c:= 1)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)
 )
 
-; fallback: in testing the castle tech itself acted as Treason, so use it if the spy command can't
+; fallback: the castle tech itself (408 = Spies/Treason)
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-tmp c:>= 0)
-    (up-compare-goal ov-tmp c:< ov-spy-every)
-    (up-compare-goal ov-spytime c:== 0)
+    (up-compare-goal ov-treaty c:<= ov-spy-lead)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
     (not (can-spy))
     (can-research ov-ri-spies)
 =>
     (research ov-ri-spies)
-    (up-modify-goal ov-spytime c:= 1)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (up-chat-data-to-all "c1_enemy: player %d researched Spies/Treason" g: ov-me)
 )
 
-; outside my slot: ready for my next one
+; leader: seconds Treason is overdue (negative = not due yet)
 (defrule
     (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-tmp c:>= ov-spy-every)
+    (up-compare-goal ov-leader c:== 1)
+    (up-compare-goal ov-phase c:>= 1)
+    (up-compare-goal ov-treaty c:<= 0)
 =>
-    (up-modify-goal ov-spytime c:= 0)
+    (up-modify-goal ov-tmp g:= ov-now)
+    (up-modify-goal ov-tmp g:- ov-spytime)
 )
 
+; tell you once if nobody can use Treason
 (defrule
     (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-tmp c:< 0)
-=>
-    (up-modify-goal ov-spytime c:= 0)
-)
-
-(defrule
-    (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-spytime c:== 1)
+    (up-compare-goal ov-leader c:== 1)
+    (up-compare-goal ov-phase c:>= 1)
+    (up-compare-goal ov-treaty c:<= 0)
+    (up-compare-goal ov-tmp c:>= 90)
     (up-compare-const ov-chatty == 1)
 =>
-    (up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)
-    (up-modify-goal ov-spytime c:= 2)
-)
-
-; Spies: once per AI, stays active (shows everything your units see)
-(defrule
-    (up-compare-goal ov-phase c:>= 1)
-    (can-research ov-ri-spies)
-=>
-    (research ov-ri-spies)
-    (up-chat-data-to-all "c1_enemy: player %d researched Spies" g: ov-me)
+    (chat-to-all "c1_enemy: Treason is overdue - no AI has a castle that can use it")
     (disable-self)
 )
 
@@ -832,6 +837,38 @@
     (up-chat-data-to-all "c1_enemy coalition: ATTACK! wave %d" g: ov-wave)
 )
 
+; leader: ov-dist = seconds since the king was last seen
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-leader c:== 1)
+    (up-compare-goal ov-phase c:== 1)
+    (up-compare-goal ov-ktime c:> 0)
+=>
+    (up-modify-goal ov-dist g:= ov-now)
+    (up-modify-goal ov-dist g:- ov-ktime)
+)
+
+; leader: a fresh king sighting (after this regroup began) sends everyone at once
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-leader c:== 1)
+    (up-compare-goal ov-phase c:== 1)
+    (up-compare-goal ov-treaty c:<= 0)
+    (up-compare-goal ov-ktime c:> 0)
+    (up-compare-goal ov-dist g:< ov-tmp)
+    (up-compare-goal ov-dist c:<= 30)
+=>
+    (up-set-shared-goal c: 202 c: 2)
+    (up-set-shared-goal c: 208 g: ov-now)
+    (up-set-shared-goal c: 209 g: ov-armysum)
+    (up-get-shared-goal c: 203 ov-wave)
+    (up-modify-goal ov-wave c:+ 1)
+    (up-set-shared-goal c: 203 g: ov-wave)
+    (up-modify-goal ov-phase c:= 2)
+    (up-modify-goal ov-tmp c:= 0)
+    (up-chat-data-to-all "c1_enemy coalition: king found - everyone ATTACK! wave %d" g: ov-wave)
+)
+
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-leader c:== 1)
@@ -1253,7 +1290,7 @@
 )
 
 ;;; ---------- ATTACK: launch, reinforce in groups, keep idle soldiers moving
-; launch: the whole army near the target goes in as one formation
+; launch (attack starts, or the king was found / moved): EVERY soldier attack-moves to the target
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-phase c:== 2)
@@ -1263,7 +1300,7 @@
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-filter-distance c: -1 c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1272,7 +1309,6 @@
     (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
     (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
     (up-remove-objects ov-search-local ov-od-garrisoned == 1)
-    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
     (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
 )
 
@@ -1285,7 +1321,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-filter-distance c: -1 c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1294,7 +1330,6 @@
     (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
     (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
     (up-remove-objects ov-search-local ov-od-garrisoned == 1)
-    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
     (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
 )
 
@@ -1307,7 +1342,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-filter-distance c: -1 c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1316,81 +1351,7 @@
     (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
     (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
     (up-remove-objects ov-search-local ov-od-garrisoned == 1)
-    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
     (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
-)
-
-; launch: soldiers still far away head to the rally point
-(defrule
-    (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-phase c:== 2)
-    (up-compare-goal ov-tgt-x c:> 0)
-    (up-compare-goal ov-launch c:== 1)
-=>
-    (up-full-reset-search)
-    (up-filter-include ov-cmdid-military -1 -1 -1)
-    (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
-    (up-find-local c: ov-all-units c: 240)
-    (up-get-search-state ov-ss)
-    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
-    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
-    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
-    (up-set-target-point ov-rally-x)
-    (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
-)
-
-(defrule
-    (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-phase c:== 2)
-    (up-compare-goal ov-tgt-x c:> 0)
-    (up-compare-goal ov-launch c:== 1)
-    (up-compare-goal ov-ss-last c:>= 240)
-=>
-    (up-reset-search 0 1 0 0)
-    (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
-    (up-find-local c: ov-all-units c: 240)
-    (up-get-search-state ov-ss)
-    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
-    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
-    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
-    (up-set-target-point ov-rally-x)
-    (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
-)
-
-(defrule
-    (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-phase c:== 2)
-    (up-compare-goal ov-tgt-x c:> 0)
-    (up-compare-goal ov-launch c:== 1)
-    (up-compare-goal ov-ss-last c:>= 240)
-=>
-    (up-reset-search 0 1 0 0)
-    (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
-    (up-find-local c: ov-all-units c: 240)
-    (up-get-search-state ov-ss)
-    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
-    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
-    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
-    (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
-    (up-set-target-point ov-rally-x)
-    (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
 )
 
 (defrule
@@ -1483,7 +1444,7 @@
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-filter-distance c: ov-front-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1495,7 +1456,7 @@
     (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
     (up-set-target-point ov-rally-x)
     (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
 )
 
 (defrule
@@ -1508,7 +1469,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-filter-distance c: ov-front-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1520,7 +1481,7 @@
     (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
     (up-set-target-point ov-rally-x)
     (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
 )
 
 (defrule
@@ -1533,7 +1494,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-filter-distance c: ov-front-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1545,7 +1506,7 @@
     (up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)
     (up-set-target-point ov-rally-x)
     (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
 )
 
 ; every tick: idle soldiers in the fight (not those waiting at the rally) push on
@@ -1559,7 +1520,7 @@
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-filter-distance c: -1 c: ov-front-radius)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1584,7 +1545,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-filter-distance c: -1 c: ov-front-radius)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1609,7 +1570,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: -1 c: ov-launch-radius)
+    (up-filter-distance c: -1 c: ov-front-radius)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1635,7 +1596,7 @@
     (up-full-reset-search)
     (up-filter-include ov-cmdid-military -1 -1 -1)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-filter-distance c: ov-front-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1647,7 +1608,7 @@
     (up-remove-objects ov-search-local ov-od-idling == 0)
     (up-set-target-point ov-rally-x)
     (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
 )
 
 (defrule
@@ -1660,7 +1621,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-filter-distance c: ov-front-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1672,7 +1633,7 @@
     (up-remove-objects ov-search-local ov-od-idling == 0)
     (up-set-target-point ov-rally-x)
     (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
 )
 
 (defrule
@@ -1685,7 +1646,7 @@
 =>
     (up-reset-search 0 1 0 0)
     (up-set-target-point ov-tgt-x)
-    (up-filter-distance c: ov-launch-radius c: -1)
+    (up-filter-distance c: ov-front-radius c: -1)
     (up-find-local c: ov-all-units c: 240)
     (up-get-search-state ov-ss)
     (up-remove-objects ov-search-local ov-od-class == ov-king-class)
@@ -1697,6 +1658,6 @@
     (up-remove-objects ov-search-local ov-od-idling == 0)
     (up-set-target-point ov-rally-x)
     (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
-    (up-target-point ov-rally-x ov-act-move ov-march-formation ov-stance-aggressive)
+    (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
 )
 

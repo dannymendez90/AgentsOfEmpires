@@ -6,18 +6,18 @@ allied, usually with a truce (treaty) at the start.
 What the generated rules do (on top of the stock Promisory AI):
   * Every AI targets player 1 and they elect a leader through shared goals.
   * Finding the king: every AI reports when it sees your king. Treason (Regicide)
-    reveals him: the AIs take turns, one use every ov-spy-every seconds
-    (P2's slot, then P3's, ... P8's, repeat). Non-Regicide games: Spies once.
-    A king sighting stays the attack target for ov-king-memory seconds;
-    otherwise the target is your nearest building.
+    reveals him: one shared clock, so the first AI with a castle uses it every
+    ov-spy-every seconds (gold topped up by cheat if needed). The first one fires
+    ov-spy-lead seconds before the truce ends. A king sighting stays the
+    attack target for ov-king-memory seconds; otherwise your nearest building.
+  * When the king is found (or moves), EVERY soldier of every AI attack-moves
+    to his position in box formation (a column of 20-unit blocks).
   * Truce: armies start moving to their rally points ov-stage-secs before the
     truce ends and attack together the moment it ends. The game's truce
     reading didn't count down in testing, so the time left is the smallest of
     that reading, first-reading-minus-elapsed, and ov-truce-max-minus-elapsed.
-  * Routes: each AI has its own rally point on its side of the target,
-    shifted sideways by player number, so the armies don't share one road.
-  * Spies (castle tech 408) once per AI. Treason every ov-spy-every seconds
-    on a rota (spy command, or tech 408 again if the command is unavailable).
+  * One shared target for the whole team. Each AI's rally point sits on its
+    own side of that target (ov-spread adds a sideways offset; 0 = none).
   * With plenty of resources stockpiled, new lumber/mining camps must stay
     close to a town center instead of sprawling over the open routes.
   * Phases, shared by the whole team:
@@ -62,25 +62,27 @@ TUNING = {
     "ov-rally-move": 12,        # only move the rally point if it shifts this far
     "ov-near-dist": 20,         # "at the rally" radius
     "ov-arrived-dist": 8,       # don't re-order units already this close
-    "ov-launch-radius": 60,     # soldiers this close to the target join the attack
+    "ov-front-radius": 60,      # soldiers this close to the target count as "at the front"
     "ov-retarget-dist": 12,     # re-issue the attack if the target moves this far
     "ov-reinforce-every": 6,    # send waiting reinforcements every N ticks (30s)
-    "ov-attack-formation": 2,   # 2 line, 4 box, 7 staggered, 8 flank, -1 none
-    "ov-march-formation": -1,   # formation used to reach the rally (-1 none)
+    "ov-attack-formation": 4,   # 2 line, 4 box, 7 staggered, 8 flank, -1 none. AoE2 has no column
+                                # formation; orders go out in groups of <=20, so box = a column of tight blocks
+    "ov-march-formation": 4,    # formation used to reach the rally point (4 box)
     "ov-stage-secs": 240,       # start gathering this long before the truce ends
-    "ov-king-memory": 180,      # a king sighting stays the target this long
+    "ov-king-memory": 900,      # a king sighting stays the target this long (until the next Treason)
     "ov-king-stale": 90,        # "king spotted" is announced after this long unseen
-    "ov-spy-every": 600,        # the team uses Treason once per this many seconds
+    "ov-spy-every": 900,        # the team uses Treason once per this many seconds (15 min)
+    "ov-spy-lead": 30,          # first Treason this many seconds before the truce ends
+    "ov-spy-gold": 1000,        # top up gold to this before Treason (cheat; Treason costs 400)
     "ov-defend-flags": 14,      # sn-disable-defend-groups while the coalition runs
     "ov-cart-headroom": 15,     # delete idle carts when pop headroom is below
     "ov-chatty": 1,             # 1 = announce phases and Treason in chat
     "ov-truce-max": 1800,       # never wait longer than this for the truce (your 30-min truce)
-    "ov-spread": 8,             # sideways tiles between the AIs' approach routes
+    "ov-spread": 0,             # sideways tiles between the AIs' rally points (0 = no offset)
     "ov-plenty": 3000,          # with this much wood (or gold+stone) stockpiled...
     "ov-camp-dist": 12,         # ...new lumber/mining camps stay this close to a town center
 }
 
-TUNING["ov-spy-cycle"] = TUNING["ov-spy-every"] * 7   # a full rota over players 2-8
 
 # Game constants, under our own names so nothing depends on other files.
 GAME = {
@@ -94,7 +96,7 @@ GAME = {
     "ov-od-garrisoned": 17, "ov-od-distance": 44, "ov-od-idling": 49,
     "ov-king-class": 959, "ov-transport-class": 920, "ov-fishing-class": 921,
     "ov-warship-class": 922, "ov-unpacked-treb-class": 954,
-    "ov-idle-trade-cart": 1, "ov-ri-spies": 408,
+    "ov-idle-trade-cart": 1, "ov-ri-spies": 408, "ov-castle": 82,
 }
 
 # Goals the stock AI leaves unused (402-417, 421-424, 426-445).
@@ -116,7 +118,7 @@ GOALS = {
 SHARED = {
     "LEADER": 200, "LEADTIME": 201, "PHASE": 202, "WAVE": 203,
     "RX": 204, "RY": 205, "TX": 206, "TY": 207, "PHASESTART": 208, "ARMYSTART": 209,
-    "KX": 240, "KY": 241, "KTIME": 242, "SPYTIME": 243, "TEND": 244,
+    "KX": 240, "KY": 241, "KTIME": 242, "SPYNEXT": 243, "TEND": 244,
 }
 HB, READY, ARMY = 210, 220, 230   # + player number
 
@@ -263,35 +265,32 @@ rule(["(up-compare-goal ov-ss-remote c:>= 1)"], [
     f"(up-set-shared-goal c: {SHARED['KY']} g: ov-tmp2)",
     f"(up-set-shared-goal c: {SHARED['KTIME']} g: ov-now)",
 ])
-rule([TICK], [
-    sget(SHARED["KTIME"], "ov-ktime"),
-    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp c:mod ov-spy-cycle)",
-    "(up-modify-goal ov-tmp2 g:= ov-me)", "(up-modify-goal ov-tmp2 c:- 2)",
-    "(up-modify-goal ov-tmp2 c:* ov-spy-every)", "(up-modify-goal ov-tmp g:- ov-tmp2)",
-], "Treason rota without shared state: each 10-minute slot belongs to one AI (P2, P3, ... P8, repeat). "
-   "ov-tmp = seconds into my slot (0 to ov-spy-every-1 when it's my turn)")
-rule([TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:>= 0)",
-      "(up-compare-goal ov-tmp c:< ov-spy-every)", "(up-compare-goal ov-spytime c:== 0)", "(can-spy)"], [
+rule([TICK], [sget(SHARED["KTIME"], "ov-ktime"), sget(SHARED["SPYNEXT"], "ov-spytime")],
+     "Treason: one shared clock for the team (SPYNEXT = game time the next one is due)")
+SPY_DUE = [TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-treaty c:<= ov-spy-lead)",
+           "(up-compare-goal ov-now g:>= ov-spytime)", "(building-type-count ov-castle >= 1)"]
+rule(SPY_DUE + ["(gold-amount < ov-spy-gold)"], ["(cc-add-resource gold ov-spy-gold)"],
+     "Treason due and I have a castle: make sure the gold is there (the queen's pad can drain it)")
+rule(SPY_DUE + ["(can-spy)"], [
     "(spy)",
-    "(up-modify-goal ov-spytime c:= 1)",
-], "Regicide: my slot and I haven't used Treason in it yet")
-rule([TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-tmp c:>= 0)",
-      "(up-compare-goal ov-tmp c:< ov-spy-every)", "(up-compare-goal ov-spytime c:== 0)",
-      "(not (can-spy))", "(can-research ov-ri-spies)"], [
-    "(research ov-ri-spies)",
-    "(up-modify-goal ov-spytime c:= 1)",
-], "fallback: in testing the castle tech itself acted as Treason, so use it if the spy command can't")
-rule([TICK, "(up-compare-goal ov-tmp c:>= ov-spy-every)"], ["(up-modify-goal ov-spytime c:= 0)"],
-     "outside my slot: ready for my next one")
-rule([TICK, "(up-compare-goal ov-tmp c:< 0)"], ["(up-modify-goal ov-spytime c:= 0)"])
-rule([TICK, "(up-compare-goal ov-spytime c:== 1)", CHATTY], [
+    "(up-modify-goal ov-spytime g:= ov-now)", "(up-modify-goal ov-spytime c:+ ov-spy-every)",
+    f"(up-set-shared-goal c: {SHARED['SPYNEXT']} g: ov-spytime)",
     '(up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)',
-    "(up-modify-goal ov-spytime c:= 2)",
-])
-rule(["(up-compare-goal ov-phase c:>= 1)", "(can-research ov-ri-spies)"],
-     ["(research ov-ri-spies)", '(up-chat-data-to-all "c1_enemy: player %d researched Spies" g: ov-me)',
-      "(disable-self)"],
-     "Spies: once per AI, stays active (shows everything your units see)")
+], "the first AI with a castle uses Treason; the shared clock stops the others until the next one")
+rule(SPY_DUE + ["(not (can-spy))", "(can-research ov-ri-spies)"], [
+    "(research ov-ri-spies)",
+    "(up-modify-goal ov-spytime g:= ov-now)", "(up-modify-goal ov-spytime c:+ ov-spy-every)",
+    f"(up-set-shared-goal c: {SHARED['SPYNEXT']} g: ov-spytime)",
+    '(up-chat-data-to-all "c1_enemy: player %d researched Spies/Treason" g: ov-me)',
+], "fallback: the castle tech itself (408 = Spies/Treason)")
+rule([TICK, LEAD, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-treaty c:<= 0)"], [
+    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-spytime)",
+], "leader: seconds Treason is overdue (negative = not due yet)")
+rule([TICK, LEAD, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-treaty c:<= 0)",
+      "(up-compare-goal ov-tmp c:>= 90)", CHATTY], [
+    '(chat-to-all "c1_enemy: Treason is overdue - no AI has a castle that can use it")',
+    "(disable-self)",
+], "tell you once if nobody can use Treason")
 
 # ------------------------------------------------------- leader election
 rule([TICK], [
@@ -380,6 +379,21 @@ rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal
     "(up-modify-goal ov-tmp c:= 0)",
     '(up-chat-data-to-all "c1_enemy coalition: ATTACK! wave %d" g: ov-wave)',
 ], "leader: gather -> attack when most armies are ready (or the gather timer ran out) and the truce is over")
+rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal ov-ktime c:> 0)"], [
+    "(up-modify-goal ov-dist g:= ov-now)", "(up-modify-goal ov-dist g:- ov-ktime)",
+], "leader: ov-dist = seconds since the king was last seen")
+rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal ov-treaty c:<= 0)",
+      "(up-compare-goal ov-ktime c:> 0)", "(up-compare-goal ov-dist g:< ov-tmp)",
+      "(up-compare-goal ov-dist c:<= 30)"], [
+    f"(up-set-shared-goal c: {SHARED['PHASE']} c: {ATTACK})",
+    f"(up-set-shared-goal c: {SHARED['PHASESTART']} g: ov-now)",
+    f"(up-set-shared-goal c: {SHARED['ARMYSTART']} g: ov-armysum)",
+    sget(SHARED["WAVE"], "ov-wave"), "(up-modify-goal ov-wave c:+ 1)",
+    f"(up-set-shared-goal c: {SHARED['WAVE']} g: ov-wave)",
+    f"(up-modify-goal ov-phase c:= {ATTACK})",
+    "(up-modify-goal ov-tmp c:= 0)",
+    '(up-chat-data-to-all "c1_enemy coalition: king found - everyone ATTACK! wave %d" g: ov-wave)',
+], "leader: a fresh king sighting (after this regroup began) sends everyone at once")
 rule([TICK, LEAD], [
     sget(SHARED["ARMYSTART"], "ov-armystart"),
     "(up-modify-goal ov-tmp2 g:= ov-armysum)", "(up-modify-goal ov-tmp2 c:* 100)",
@@ -493,24 +507,21 @@ REINFORCE = ATTACK_ON + ["(up-compare-goal ov-launch c:== 0)", "(up-compare-goal
 STEADY = ATTACK_ON + ["(up-compare-goal ov-launch c:== 0)", "(up-compare-goal ov-reinforce c:!= 0)"]
 
 out.append(";;; ---------- ATTACK: launch, reinforce in groups, keep idle soldiers moving")
-army(LAUNCH, "ov-tgt-x", -1, "ov-launch-radius", [NOT_FIGHTING],
+army(LAUNCH, "ov-tgt-x", -1, -1, [],
      "ov-tgt-x", "ov-act-attack-move", "ov-attack-formation",
-     "launch: the whole army near the target goes in as one formation")
-army(LAUNCH, "ov-tgt-x", "ov-launch-radius", -1, [NOT_FIGHTING, *OUTSIDE_RALLY_ARRIVED],
-     "ov-rally-x", "ov-act-move", "ov-march-formation",
-     "launch: soldiers still far away head to the rally point")
+     "launch (attack starts, or the king was found / moved): EVERY soldier attack-moves to the target")
 rule(LAUNCH, ["(up-modify-goal ov-launch c:= 0)"])
 army(REINFORCE, "ov-rally-x", -1, "ov-near-dist", [NOT_FIGHTING],
      "ov-tgt-x", "ov-act-attack-move", "ov-attack-formation",
      "reinforce: everyone waiting at the rally goes in together")
-army(REINFORCE, "ov-tgt-x", "ov-launch-radius", -1, [NOT_FIGHTING, *OUTSIDE_RALLY_ARRIVED],
-     "ov-rally-x", "ov-act-move", "ov-march-formation",
+army(REINFORCE, "ov-tgt-x", "ov-front-radius", -1, [NOT_FIGHTING, *OUTSIDE_RALLY_ARRIVED],
+     "ov-rally-x", "ov-act-attack-move", "ov-march-formation",
      "reinforce: new soldiers from home head to the rally point")
-army(STEADY, "ov-tgt-x", -1, "ov-launch-radius", [ONLY_IDLE, *OUTSIDE_RALLY_NEAR],
+army(STEADY, "ov-tgt-x", -1, "ov-front-radius", [ONLY_IDLE, *OUTSIDE_RALLY_NEAR],
      "ov-tgt-x", "ov-act-attack-move", "ov-attack-formation",
      "every tick: idle soldiers in the fight (not those waiting at the rally) push on")
-army(STEADY, "ov-tgt-x", "ov-launch-radius", -1, [ONLY_IDLE, *OUTSIDE_RALLY_ARRIVED],
-     "ov-rally-x", "ov-act-move", "ov-march-formation",
+army(STEADY, "ov-tgt-x", "ov-front-radius", -1, [ONLY_IDLE, *OUTSIDE_RALLY_ARRIVED],
+     "ov-rally-x", "ov-act-attack-move", "ov-march-formation",
      "every tick: idle soldiers far away head to the rally point")
 
 # --------------------------------------------------------------- output
