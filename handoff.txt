@@ -199,3 +199,27 @@ SESSION 2026-11-18 (v6)
     box) to the king's last known position, even with no new sighting, to unstick idle or
     bunched troops. A new sighting with the king moved > 12 tiles still re-sends at once.
     ov-king-memory 1200 so the last known position never lapses between Treasons (900s).
+
+SESSION 2026-11-18 (v7) - REWRITE. Supersedes the v2-v6 COALITION DESIGN section above.
+  Playtest of v6.1 (rec.aoe2record 2026-11-18, 109 min), parsed with mgz fast ops
+  (seek past header length first; CHAT payloads are JSON; ACTION payloads have player_id):
+    - "joined" from all 7 at 0:03. Treason fired exactly on the clock: 29:30, 44:30, 59:30, ...
+    - The 200 report worked, so up-chat-data-to-all DOES display. The earlier theory that it
+      didn't was wrong; the silent Nov 15 game had some other cause (maybe AoE2 wasn't restarted).
+    - NO "king spotted", NO "gathering"/"ATTACK!" all game. Phase stuck in GATHER: the
+      GATHER->ATTACK rule required ov-ready >= 1 even with the timeout, and no AI ever got 60%
+      of its army within 20 tiles of its rally (near the user's walled base). The stock attack
+      groups were off after 30 min, so the armies sat idle: the "passive" behavior.
+  v7 (gen_overlord.py rewritten, 68 rules): no leader, phases, rally or truce reading.
+    - Truce over = game time >= ov-truce-max (1800). Change it if the truce changes.
+    - Wave clock (shared ORDNEXT 246, ORDID 245, target TX/TY 206/207): every 180s the first
+      AI picks the target (king's last known position if seen within 1200s, else its
+      position-focus = player 1's nearest building) and bumps ORDID. Every AI with
+      ORDID != ov-myord attack-moves ALL military (3x240, box) to TX/TY.
+    - Every 30s, idle soldiers > 30 tiles from their own TC attack-move to TX/TY.
+    - King scan every pass: up-find-remote by unit 434, then class 959. Shares KX/KY/KTIME.
+      After the truce, a sighting > 12 tiles from TX makes it the target and bumps ORDID.
+    - Treason clock unchanged. 20s after its Treason, that AI chats whether the team saw the
+      king ("Treason worked" or "did NOT show us your king"). This is the test for whether
+      Treason reveals the king to the AI's search.
+    - Joined chat says "(v7)" so you can tell the version loaded.
