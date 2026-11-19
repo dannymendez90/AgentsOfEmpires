@@ -64,7 +64,11 @@ TUNING = {
     "ov-near-dist": 20,         # "at the rally" radius
     "ov-arrived-dist": 8,       # don't re-order units already this close
     "ov-front-radius": 60,      # soldiers this close to the target count as "at the front"
-    "ov-retarget-dist": 12,     # re-issue the attack if the target moves this far
+    "ov-retarget-dist": 12,
+    "ov-king-relaunch": 60,     # while the king stays visible, re-send everyone at most this often
+                                # (sooner if he moves ov-retarget-dist tiles)
+    "ov-report-all": 200,       # type this number in chat: every AI reports its resources
+    "ov-report-base": 200,      # type 200+N (202..208): only player N reports     # re-issue the attack if the target moves this far
     "ov-reinforce-every": 6,    # send waiting reinforcements every N ticks (30s)
     "ov-attack-formation": 4,   # 2 line, 4 box, 7 staggered, 8 flank, -1 none. AoE2 has no column
                                 # formation; orders go out in groups of <=20, so box = a column of tight blocks
@@ -124,6 +128,7 @@ SHARED = {
     "KX": 240, "KY": 241, "KTIME": 242, "SPYNEXT": 243, "TEND": 244,
 }
 HB, READY, ARMY = 210, 220, 230   # + player number
+KLAUNCH = 170                     # + player number: game time of my last king launch
 
 # Removed from every army search: our own king (and queen), ships, unpacked
 # trebuchets (can't move) and garrisoned units.
@@ -410,6 +415,12 @@ rule([TICK], [
     sget(SHARED["TX"], "ov-tgt-x"), sget(SHARED["TY"], "ov-tgt-y"),
     "(up-get-point ov-pos-self ov-home-x)",
 ], "every AI: read the shared plan")
+rule([TICK, "(up-compare-goal ov-ktime c:> 0)"], [
+    "(up-modify-goal ov-dist g:= ov-now)", "(up-modify-goal ov-dist g:- ov-ktime)",
+], "ov-dist = seconds since anyone on the team saw the king")
+rule([TICK, "(up-compare-goal ov-ktime c:> 0)", "(up-compare-goal ov-dist c:<= ov-king-memory)"], [
+    sget(SHARED["KX"], "ov-tgt-x"), sget(SHARED["KY"], "ov-tgt-y"),
+], "a king sighting is MY target too, straight from the shared sighting (doesn't wait for the leader)")
 rule([TICK, "(up-compare-goal ov-home-x c:< 0)"], ["(up-get-point ov-pos-center ov-home-x)"])
 rule([TICK, "(up-compare-goal ov-tgt-x c:> 0)"], [
     "(up-modify-goal ov-rally-x g:= ov-tgt-x)", "(up-modify-goal ov-rally-y g:= ov-tgt-y)",
@@ -444,7 +455,7 @@ rule([TICK, f"(up-compare-goal ov-phase c:== {ATTACK})", "(up-compare-goal ov-la
 rule([TICK, "(up-compare-goal ov-reinforce c:> ov-reinforce-every)"], ["(up-modify-goal ov-reinforce c:= 0)"])
 
 # ------------------------------------- take the army away from the stock AI
-rule(["(up-compare-goal ov-phase c:>= 1)"], [
+rule(["(or (up-compare-goal ov-phase c:>= 1) (up-compare-goal ov-now c:>= ov-truce-max))"], [
     "(set-strategic-number sn-number-attack-groups 0)",
     "(set-strategic-number sn-disable-attack-groups 1)",
     "(set-strategic-number sn-task-ungrouped-soldiers 0)",
@@ -520,6 +531,56 @@ army(STEADY, "ov-tgt-x", -1, "ov-front-radius", [ONLY_IDLE, *OUTSIDE_RALLY_NEAR]
 army(STEADY, "ov-tgt-x", "ov-front-radius", -1, [ONLY_IDLE, *OUTSIDE_RALLY_ARRIVED],
      "ov-rally-x", "ov-act-attack-move", "ov-march-formation",
      "every tick: idle soldiers far away head to the rally point")
+
+# ------------------------------------------- king found: everyone goes
+# Independent of the leader and the phases: every AI checks the shared sighting itself.
+out.append(";;; ---------- KING: every soldier attack-moves to the king's last known position")
+TRUCE_OVER = "(or (up-compare-goal ov-now c:>= ov-truce-max) (up-compare-goal ov-treaty c:<= 0))"
+rule([TICK, TRUCE_OVER, "(up-compare-goal ov-ktime c:> 0)", "(up-compare-goal ov-dist c:<= ov-king-memory)"], [
+    "(up-modify-goal ov-launch c:= 3)",
+    *per_player_slot(KLAUNCH), "(up-get-shared-goal g: ov-idx ov-tmp2)",
+    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-tmp2)",
+    "(up-get-point-distance ov-tgt-x ov-sent-x ov-dist)",
+], "ov-tmp2 = my last king launch, ov-tmp = seconds since it, ov-dist = how far the king is from where I sent them")
+KING_ON = [TICK, "(up-compare-goal ov-launch c:== 3)", "(up-compare-goal ov-ktime g:> ov-tmp2)",
+           "(up-compare-goal ov-tgt-x c:> 0)"]
+rule(KING_ON + ["(or (up-compare-goal ov-dist c:> ov-retarget-dist) (up-compare-goal ov-tmp c:>= ov-king-relaunch))"],
+     ["(up-modify-goal ov-launch c:= 2)"],
+     "a sighting newer than my last order, and the king moved (or my last order is old): go")
+army([TICK, "(up-compare-goal ov-launch c:== 2)"], "ov-tgt-x", -1, -1, [],
+     "ov-tgt-x", "ov-act-attack-move", "ov-attack-formation",
+     "KING: every soldier I have, wherever it is, attack-moves to the king")
+rule([TICK, "(up-compare-goal ov-launch c:== 3)"], ["(up-modify-goal ov-launch c:= 0)"],
+     "fresh sighting, but nothing new to order")
+rule([TICK, "(up-compare-goal ov-launch c:== 2)", LEAD, CHATTY], [
+    '(chat-to-all "c1_enemy coalition: all armies attack-moving to the king")',
+], "the leader announces it (the other AIs launch on the same sighting)")
+rule([TICK, "(up-compare-goal ov-launch c:== 2)"], [
+    "(up-modify-goal ov-launch c:= 0)",
+    "(up-modify-goal ov-sent-x g:= ov-tgt-x)", "(up-modify-goal ov-sent-y g:= ov-tgt-y)",
+    *per_player_slot(KLAUNCH), "(up-set-shared-goal g: ov-idx g: ov-now)",
+])
+
+# --------------------------------------------- resource report on request
+# Type 200 in chat for every AI, or 202-208 for one player. A chat line that starts with a
+# number counts as a taunt, and AIs can detect taunts from player 1.
+out.append(";;; ---------- REPORT: type 200 (all AIs) or 202-208 (one AI) in chat")
+for n in range(2, 9):
+    asked = (f"(or (taunt-detected ov-target-player ov-report-all) "
+             f"(taunt-detected ov-target-player {200 + n}))")
+    rule([f"(player-number {n})", asked], [
+        f'(chat-to-all "c1_enemy: player {n} resources -")',
+        "(up-get-fact food-amount 0 ov-tmp)", '(up-chat-data-to-all "food %d" g: ov-tmp)',
+        "(up-get-fact wood-amount 0 ov-tmp)", '(up-chat-data-to-all "wood %d" g: ov-tmp)',
+        "(up-get-fact gold-amount 0 ov-tmp)", '(up-chat-data-to-all "gold %d" g: ov-tmp)',
+        "(up-get-fact stone-amount 0 ov-tmp)", '(up-chat-data-to-all "stone %d" g: ov-tmp)',
+        "(up-get-fact ov-fact-military-pop 0 ov-tmp)", '(up-chat-data-to-all "soldiers %d" g: ov-tmp)',
+    ], "resource report for you" if n == 2 else None)
+rule(["(taunt-detected ov-target-player ov-report-all)"],
+     ["(acknowledge-taunt ov-target-player ov-report-all)"])
+for n in range(2, 9):
+    rule([f"(taunt-detected ov-target-player {200 + n})"],
+         [f"(acknowledge-taunt ov-target-player {200 + n})"])
 
 # --------------------------------------------------------------- output
 here = Path(__file__).resolve().parent

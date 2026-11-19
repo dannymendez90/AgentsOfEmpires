@@ -181,3 +181,17 @@ SESSION 2026-11-18 (v5) - ROOT CAUSES FOUND
     ov-first-spy = truce-max - 30 = 1770s, then every 900s. It doesn't depend on the phase
     logic or the truce reading. Any AI with a castle (gold topped up to 1000 by cheat) does
     it; the (spy) command is only a backup. The leader chats once if it's 90s overdue.
+
+SESSION 2026-11-18 (v6)
+  - Resource report: player 1 types 200 in chat (all AIs) or 202-208 (one AI). A chat line
+    starting with a number is a taunt; taunt-detected + acknowledge-taunt. Each AI prints a
+    plain chat-to-all header, then food/wood/gold/stone/soldiers via up-chat-data-to-all.
+    This also tests whether up-chat-data-to-all displays: header shown but no numbers = it
+    doesn't (then switch to bracketed plain-text amounts).
+  - King attack, independent of the leader and the phases: every AI reads the shared sighting
+    (KX/KY/KTIME) itself and uses it as its own target for ov-king-memory (900s). After the
+    truce (game time >= ov-truce-max OR treaty <= 0), a sighting newer than my last king launch
+    (shared goal 170+p), if the king moved > ov-retarget-dist from where I sent them or my last
+    launch is >= ov-king-relaunch (60s) old, sends EVERY soldier (attack-move, box) to it.
+    The leader chats "all armies attack-moving to the king".
+  - Stock attack groups are switched off once game time >= ov-truce-max even if phase stays 0.

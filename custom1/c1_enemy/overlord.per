@@ -19,6 +19,9 @@
 (defconst ov-arrived-dist 8)
 (defconst ov-front-radius 60)
 (defconst ov-retarget-dist 12)
+(defconst ov-king-relaunch 60)
+(defconst ov-report-all 200)
+(defconst ov-report-base 200)
 (defconst ov-reinforce-every 6)
 (defconst ov-attack-formation 4)
 (defconst ov-march-formation 4)
@@ -1121,6 +1124,25 @@
     (up-get-point ov-pos-self ov-home-x)
 )
 
+; ov-dist = seconds since anyone on the team saw the king
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-ktime c:> 0)
+=>
+    (up-modify-goal ov-dist g:= ov-now)
+    (up-modify-goal ov-dist g:- ov-ktime)
+)
+
+; a king sighting is MY target too, straight from the shared sighting (doesn't wait for the leader)
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-ktime c:> 0)
+    (up-compare-goal ov-dist c:<= ov-king-memory)
+=>
+    (up-get-shared-goal c: 240 ov-tgt-x)
+    (up-get-shared-goal c: 241 ov-tgt-y)
+)
+
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-home-x c:< 0)
@@ -1213,7 +1235,7 @@
 
 ; coalition running: no stock attack groups, town-spreading or far defend-assists
 (defrule
-    (up-compare-goal ov-phase c:>= 1)
+    (or (up-compare-goal ov-phase c:>= 1) (up-compare-goal ov-now c:>= ov-truce-max))
 =>
     (set-strategic-number sn-number-attack-groups 0)
     (set-strategic-number sn-disable-attack-groups 1)
@@ -1877,5 +1899,290 @@
     (up-set-target-point ov-rally-x)
     (up-remove-objects ov-search-local ov-od-distance < ov-arrived-dist)
     (up-target-point ov-rally-x ov-act-attack-move ov-march-formation ov-stance-aggressive)
+)
+
+;;; ---------- KING: every soldier attack-moves to the king's last known position
+; ov-tmp2 = my last king launch, ov-tmp = seconds since it, ov-dist = how far the king is from where I sent them
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (or (up-compare-goal ov-now c:>= ov-truce-max) (up-compare-goal ov-treaty c:<= 0))
+    (up-compare-goal ov-ktime c:> 0)
+    (up-compare-goal ov-dist c:<= ov-king-memory)
+=>
+    (up-modify-goal ov-launch c:= 3)
+    (up-modify-goal ov-idx c:= 170)
+    (up-modify-goal ov-idx g:+ ov-me)
+    (up-get-shared-goal g: ov-idx ov-tmp2)
+    (up-modify-goal ov-tmp g:= ov-now)
+    (up-modify-goal ov-tmp g:- ov-tmp2)
+    (up-get-point-distance ov-tgt-x ov-sent-x ov-dist)
+)
+
+; a sighting newer than my last order, and the king moved (or my last order is old): go
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 3)
+    (up-compare-goal ov-ktime g:> ov-tmp2)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (or (up-compare-goal ov-dist c:> ov-retarget-dist) (up-compare-goal ov-tmp c:>= ov-king-relaunch))
+=>
+    (up-modify-goal ov-launch c:= 2)
+)
+
+; KING: every soldier I have, wherever it is, attack-moves to the king
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 2)
+=>
+    (up-full-reset-search)
+    (up-filter-include ov-cmdid-military -1 -1 -1)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: -1 c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 2)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: -1 c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 2)
+    (up-compare-goal ov-ss-last c:>= 240)
+=>
+    (up-reset-search 0 1 0 0)
+    (up-set-target-point ov-tgt-x)
+    (up-filter-distance c: -1 c: -1)
+    (up-find-local c: ov-all-units c: 240)
+    (up-get-search-state ov-ss)
+    (up-remove-objects ov-search-local ov-od-class == ov-king-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-transport-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-fishing-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-warship-class)
+    (up-remove-objects ov-search-local ov-od-class == ov-unpacked-treb-class)
+    (up-remove-objects ov-search-local ov-od-garrisoned == 1)
+    (up-target-point ov-tgt-x ov-act-attack-move ov-attack-formation ov-stance-aggressive)
+)
+
+; fresh sighting, but nothing new to order
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 3)
+=>
+    (up-modify-goal ov-launch c:= 0)
+)
+
+; the leader announces it (the other AIs launch on the same sighting)
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 2)
+    (up-compare-goal ov-leader c:== 1)
+    (up-compare-const ov-chatty == 1)
+=>
+    (chat-to-all "c1_enemy coalition: all armies attack-moving to the king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 2)
+=>
+    (up-modify-goal ov-launch c:= 0)
+    (up-modify-goal ov-sent-x g:= ov-tgt-x)
+    (up-modify-goal ov-sent-y g:= ov-tgt-y)
+    (up-modify-goal ov-idx c:= 170)
+    (up-modify-goal ov-idx g:+ ov-me)
+    (up-set-shared-goal g: ov-idx g: ov-now)
+)
+
+;;; ---------- REPORT: type 200 (all AIs) or 202-208 (one AI) in chat
+; resource report for you
+(defrule
+    (player-number 2)
+    (or (taunt-detected ov-target-player ov-report-all) (taunt-detected ov-target-player 202))
+=>
+    (chat-to-all "c1_enemy: player 2 resources -")
+    (up-get-fact food-amount 0 ov-tmp)
+    (up-chat-data-to-all "food %d" g: ov-tmp)
+    (up-get-fact wood-amount 0 ov-tmp)
+    (up-chat-data-to-all "wood %d" g: ov-tmp)
+    (up-get-fact gold-amount 0 ov-tmp)
+    (up-chat-data-to-all "gold %d" g: ov-tmp)
+    (up-get-fact stone-amount 0 ov-tmp)
+    (up-chat-data-to-all "stone %d" g: ov-tmp)
+    (up-get-fact ov-fact-military-pop 0 ov-tmp)
+    (up-chat-data-to-all "soldiers %d" g: ov-tmp)
+)
+
+(defrule
+    (player-number 3)
+    (or (taunt-detected ov-target-player ov-report-all) (taunt-detected ov-target-player 203))
+=>
+    (chat-to-all "c1_enemy: player 3 resources -")
+    (up-get-fact food-amount 0 ov-tmp)
+    (up-chat-data-to-all "food %d" g: ov-tmp)
+    (up-get-fact wood-amount 0 ov-tmp)
+    (up-chat-data-to-all "wood %d" g: ov-tmp)
+    (up-get-fact gold-amount 0 ov-tmp)
+    (up-chat-data-to-all "gold %d" g: ov-tmp)
+    (up-get-fact stone-amount 0 ov-tmp)
+    (up-chat-data-to-all "stone %d" g: ov-tmp)
+    (up-get-fact ov-fact-military-pop 0 ov-tmp)
+    (up-chat-data-to-all "soldiers %d" g: ov-tmp)
+)
+
+(defrule
+    (player-number 4)
+    (or (taunt-detected ov-target-player ov-report-all) (taunt-detected ov-target-player 204))
+=>
+    (chat-to-all "c1_enemy: player 4 resources -")
+    (up-get-fact food-amount 0 ov-tmp)
+    (up-chat-data-to-all "food %d" g: ov-tmp)
+    (up-get-fact wood-amount 0 ov-tmp)
+    (up-chat-data-to-all "wood %d" g: ov-tmp)
+    (up-get-fact gold-amount 0 ov-tmp)
+    (up-chat-data-to-all "gold %d" g: ov-tmp)
+    (up-get-fact stone-amount 0 ov-tmp)
+    (up-chat-data-to-all "stone %d" g: ov-tmp)
+    (up-get-fact ov-fact-military-pop 0 ov-tmp)
+    (up-chat-data-to-all "soldiers %d" g: ov-tmp)
+)
+
+(defrule
+    (player-number 5)
+    (or (taunt-detected ov-target-player ov-report-all) (taunt-detected ov-target-player 205))
+=>
+    (chat-to-all "c1_enemy: player 5 resources -")
+    (up-get-fact food-amount 0 ov-tmp)
+    (up-chat-data-to-all "food %d" g: ov-tmp)
+    (up-get-fact wood-amount 0 ov-tmp)
+    (up-chat-data-to-all "wood %d" g: ov-tmp)
+    (up-get-fact gold-amount 0 ov-tmp)
+    (up-chat-data-to-all "gold %d" g: ov-tmp)
+    (up-get-fact stone-amount 0 ov-tmp)
+    (up-chat-data-to-all "stone %d" g: ov-tmp)
+    (up-get-fact ov-fact-military-pop 0 ov-tmp)
+    (up-chat-data-to-all "soldiers %d" g: ov-tmp)
+)
+
+(defrule
+    (player-number 6)
+    (or (taunt-detected ov-target-player ov-report-all) (taunt-detected ov-target-player 206))
+=>
+    (chat-to-all "c1_enemy: player 6 resources -")
+    (up-get-fact food-amount 0 ov-tmp)
+    (up-chat-data-to-all "food %d" g: ov-tmp)
+    (up-get-fact wood-amount 0 ov-tmp)
+    (up-chat-data-to-all "wood %d" g: ov-tmp)
+    (up-get-fact gold-amount 0 ov-tmp)
+    (up-chat-data-to-all "gold %d" g: ov-tmp)
+    (up-get-fact stone-amount 0 ov-tmp)
+    (up-chat-data-to-all "stone %d" g: ov-tmp)
+    (up-get-fact ov-fact-military-pop 0 ov-tmp)
+    (up-chat-data-to-all "soldiers %d" g: ov-tmp)
+)
+
+(defrule
+    (player-number 7)
+    (or (taunt-detected ov-target-player ov-report-all) (taunt-detected ov-target-player 207))
+=>
+    (chat-to-all "c1_enemy: player 7 resources -")
+    (up-get-fact food-amount 0 ov-tmp)
+    (up-chat-data-to-all "food %d" g: ov-tmp)
+    (up-get-fact wood-amount 0 ov-tmp)
+    (up-chat-data-to-all "wood %d" g: ov-tmp)
+    (up-get-fact gold-amount 0 ov-tmp)
+    (up-chat-data-to-all "gold %d" g: ov-tmp)
+    (up-get-fact stone-amount 0 ov-tmp)
+    (up-chat-data-to-all "stone %d" g: ov-tmp)
+    (up-get-fact ov-fact-military-pop 0 ov-tmp)
+    (up-chat-data-to-all "soldiers %d" g: ov-tmp)
+)
+
+(defrule
+    (player-number 8)
+    (or (taunt-detected ov-target-player ov-report-all) (taunt-detected ov-target-player 208))
+=>
+    (chat-to-all "c1_enemy: player 8 resources -")
+    (up-get-fact food-amount 0 ov-tmp)
+    (up-chat-data-to-all "food %d" g: ov-tmp)
+    (up-get-fact wood-amount 0 ov-tmp)
+    (up-chat-data-to-all "wood %d" g: ov-tmp)
+    (up-get-fact gold-amount 0 ov-tmp)
+    (up-chat-data-to-all "gold %d" g: ov-tmp)
+    (up-get-fact stone-amount 0 ov-tmp)
+    (up-chat-data-to-all "stone %d" g: ov-tmp)
+    (up-get-fact ov-fact-military-pop 0 ov-tmp)
+    (up-chat-data-to-all "soldiers %d" g: ov-tmp)
+)
+
+(defrule
+    (taunt-detected ov-target-player ov-report-all)
+=>
+    (acknowledge-taunt ov-target-player ov-report-all)
+)
+
+(defrule
+    (taunt-detected ov-target-player 202)
+=>
+    (acknowledge-taunt ov-target-player 202)
+)
+
+(defrule
+    (taunt-detected ov-target-player 203)
+=>
+    (acknowledge-taunt ov-target-player 203)
+)
+
+(defrule
+    (taunt-detected ov-target-player 204)
+=>
+    (acknowledge-taunt ov-target-player 204)
+)
+
+(defrule
+    (taunt-detected ov-target-player 205)
+=>
+    (acknowledge-taunt ov-target-player 205)
+)
+
+(defrule
+    (taunt-detected ov-target-player 206)
+=>
+    (acknowledge-taunt ov-target-player 206)
+)
+
+(defrule
+    (taunt-detected ov-target-player 207)
+=>
+    (acknowledge-taunt ov-target-player 207)
+)
+
+(defrule
+    (taunt-detected ov-target-player 208)
+=>
+    (acknowledge-taunt ov-target-player 208)
 )
 
