@@ -19,14 +19,14 @@
 (defconst ov-arrived-dist 8)
 (defconst ov-front-radius 60)
 (defconst ov-retarget-dist 12)
-(defconst ov-king-relaunch 60)
+(defconst ov-king-relaunch 180)
 (defconst ov-report-all 200)
 (defconst ov-report-base 200)
 (defconst ov-reinforce-every 6)
 (defconst ov-attack-formation 4)
 (defconst ov-march-formation 4)
 (defconst ov-stage-secs 240)
-(defconst ov-king-memory 900)
+(defconst ov-king-memory 1200)
 (defconst ov-king-stale 90)
 (defconst ov-spy-every 900)
 (defconst ov-spy-lead 30)
@@ -1918,13 +1918,23 @@
     (up-get-point-distance ov-tgt-x ov-sent-x ov-dist)
 )
 
-; a sighting newer than my last order, and the king moved (or my last order is old): go
+; a sighting newer than my last order and the king moved: go now
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-launch c:== 3)
-    (up-compare-goal ov-ktime g:> ov-tmp2)
     (up-compare-goal ov-tgt-x c:> 0)
-    (or (up-compare-goal ov-dist c:> ov-retarget-dist) (up-compare-goal ov-tmp c:>= ov-king-relaunch))
+    (up-compare-goal ov-ktime g:> ov-tmp2)
+    (up-compare-goal ov-dist c:> ov-retarget-dist)
+=>
+    (up-modify-goal ov-launch c:= 2)
+)
+
+; every 3 minutes: re-send everyone to the last known position, even without a new sighting
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-launch c:== 3)
+    (up-compare-goal ov-tgt-x c:> 0)
+    (up-compare-goal ov-tmp c:>= ov-king-relaunch)
 =>
     (up-modify-goal ov-launch c:= 2)
 )

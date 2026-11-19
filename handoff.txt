@@ -195,3 +195,7 @@ SESSION 2026-11-18 (v6)
     launch is >= ov-king-relaunch (60s) old, sends EVERY soldier (attack-move, box) to it.
     The leader chats "all armies attack-moving to the king".
   - Stock attack groups are switched off once game time >= ov-truce-max even if phase stays 0.
+  v6.1 (same day): every 180s (ov-king-relaunch) each AI re-sends EVERY soldier (attack-move,
+    box) to the king's last known position, even with no new sighting, to unstick idle or
+    bunched troops. A new sighting with the king moved > 12 tiles still re-sends at once.
+    ov-king-memory 1200 so the last known position never lapses between Treasons (900s).

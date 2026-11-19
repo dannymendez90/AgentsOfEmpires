@@ -64,17 +64,19 @@ TUNING = {
     "ov-near-dist": 20,         # "at the rally" radius
     "ov-arrived-dist": 8,       # don't re-order units already this close
     "ov-front-radius": 60,      # soldiers this close to the target count as "at the front"
-    "ov-retarget-dist": 12,
-    "ov-king-relaunch": 60,     # while the king stays visible, re-send everyone at most this often
-                                # (sooner if he moves ov-retarget-dist tiles)
+    "ov-retarget-dist": 12,     # re-issue the attack if the target moves this far
+    "ov-king-relaunch": 180,    # every 3 min, re-send EVERY soldier to the king's last known position
+                                # (unsticks idle/bunched troops). A new sighting with the king moved
+                                # ov-retarget-dist tiles re-sends them right away.
     "ov-report-all": 200,       # type this number in chat: every AI reports its resources
-    "ov-report-base": 200,      # type 200+N (202..208): only player N reports     # re-issue the attack if the target moves this far
+    "ov-report-base": 200,      # type 200+N (202..208): only player N reports
     "ov-reinforce-every": 6,    # send waiting reinforcements every N ticks (30s)
     "ov-attack-formation": 4,   # 2 line, 4 box, 7 staggered, 8 flank, -1 none. AoE2 has no column
                                 # formation; orders go out in groups of <=20, so box = a column of tight blocks
     "ov-march-formation": 4,    # formation used to reach the rally point (4 box)
     "ov-stage-secs": 240,       # start gathering this long before the truce ends
-    "ov-king-memory": 900,      # a king sighting stays the target this long (until the next Treason)
+    "ov-king-memory": 1200,     # the king's last known position stays the target this long
+                                # (longer than the 15-min Treason gap, so it never lapses in between)
     "ov-king-stale": 90,        # "king spotted" is announced after this long unseen
     "ov-spy-every": 900,        # the team uses Treason once per this many seconds (15 min)
     "ov-spy-lead": 30,          # first Treason this many seconds before the truce ends
@@ -542,11 +544,13 @@ rule([TICK, TRUCE_OVER, "(up-compare-goal ov-ktime c:> 0)", "(up-compare-goal ov
     "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-tmp2)",
     "(up-get-point-distance ov-tgt-x ov-sent-x ov-dist)",
 ], "ov-tmp2 = my last king launch, ov-tmp = seconds since it, ov-dist = how far the king is from where I sent them")
-KING_ON = [TICK, "(up-compare-goal ov-launch c:== 3)", "(up-compare-goal ov-ktime g:> ov-tmp2)",
-           "(up-compare-goal ov-tgt-x c:> 0)"]
-rule(KING_ON + ["(or (up-compare-goal ov-dist c:> ov-retarget-dist) (up-compare-goal ov-tmp c:>= ov-king-relaunch))"],
+KING_ON = [TICK, "(up-compare-goal ov-launch c:== 3)", "(up-compare-goal ov-tgt-x c:> 0)"]
+rule(KING_ON + ["(up-compare-goal ov-ktime g:> ov-tmp2)", "(up-compare-goal ov-dist c:> ov-retarget-dist)"],
      ["(up-modify-goal ov-launch c:= 2)"],
-     "a sighting newer than my last order, and the king moved (or my last order is old): go")
+     "a sighting newer than my last order and the king moved: go now")
+rule(KING_ON + ["(up-compare-goal ov-tmp c:>= ov-king-relaunch)"],
+     ["(up-modify-goal ov-launch c:= 2)"],
+     "every 3 minutes: re-send everyone to the last known position, even without a new sighting")
 army([TICK, "(up-compare-goal ov-launch c:== 2)"], "ov-tgt-x", -1, -1, [],
      "ov-tgt-x", "ov-act-attack-move", "ov-attack-formation",
      "KING: every soldier I have, wherever it is, attack-moves to the king")
