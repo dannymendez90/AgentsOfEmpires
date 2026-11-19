@@ -6,9 +6,10 @@ allied, usually with a truce (treaty) at the start.
 What the generated rules do (on top of the stock Promisory AI):
   * Every AI targets player 1 and they elect a leader through shared goals.
   * Finding the king: every AI reports when it sees your king. Treason (Regicide)
-    reveals him: one shared clock, so the first AI with a castle uses it every
-    ov-spy-every seconds (gold topped up by cheat if needed). The first one fires
-    ov-spy-lead seconds before the truce ends. A king sighting stays the
+    reveals him. Treason is castle tech 408 (research), on one shared clock:
+    the first AI with a castle researches it every ov-spy-every seconds (gold
+    topped up by cheat if needed), starting ov-spy-lead seconds before the
+    truce ends. Independent of the phase logic. A king sighting stays the
     attack target for ov-king-memory seconds; otherwise your nearest building.
   * When the king is found (or moves), EVERY soldier of every AI attack-moves
     to his position in box formation (a column of 20-unit blocks).
@@ -83,6 +84,8 @@ TUNING = {
     "ov-camp-dist": 12,         # ...new lumber/mining camps stay this close to a town center
 }
 
+
+TUNING["ov-first-spy"] = TUNING["ov-truce-max"] - TUNING["ov-spy-lead"]
 
 # Game constants, under our own names so nothing depends on other files.
 GAME = {
@@ -226,15 +229,11 @@ rule([TICK, "(up-compare-goal ov-tmp2 c:> 0)"], [
     "(up-modify-goal ov-treaty g:min ov-tmp)",
     "(up-modify-goal ov-treaty c:max 0)",
 ], "truce: ov-treaty = seconds left")
-rule([TICK, "(up-compare-goal ov-now c:>= 10)", "(up-compare-goal ov-me c:== 2)", CHATTY], [
-    '(up-chat-data-to-all "c1_enemy: truce timer reads %d seconds left" g: ov-treaty)',
-    "(disable-self)",
-], "one-time check you can read in chat")
-
-rule(["(up-compare-goal ov-me c:>= 1)", "(up-compare-goal ov-now c:>= 3)", CHATTY], [
-    '(up-chat-data-to-all "c1_enemy: player %d joined the coalition" g: ov-me)',
-    "(disable-self)",
-])
+# Chat: up-chat-data-to-all (text with a number) never showed in game, so only plain chat-to-all is used.
+for n in range(2, 9):
+    rule([f"(player-number {n})", "(up-compare-goal ov-now c:>= 3)", CHATTY], [
+        f'(chat-to-all "c1_enemy: player {n} joined the coalition")', "(disable-self)",
+    ], "proof the coalition layer is running" if n == 2 else None)
 
 # ------------------------------------------------- heartbeat + army report
 rule([TICK], [
@@ -267,28 +266,26 @@ rule(["(up-compare-goal ov-ss-remote c:>= 1)"], [
 ])
 rule([TICK], [sget(SHARED["KTIME"], "ov-ktime"), sget(SHARED["SPYNEXT"], "ov-spytime")],
      "Treason: one shared clock for the team (SPYNEXT = game time the next one is due)")
-SPY_DUE = [TICK, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-treaty c:<= ov-spy-lead)",
-           "(up-compare-goal ov-now g:>= ov-spytime)", "(building-type-count ov-castle >= 1)"]
+rule([TICK], ["(up-modify-goal ov-spytime c:max ov-first-spy)"],
+     "the first Treason is due ov-spy-lead seconds before the truce ends")
+SPY_DUE = [TICK, "(up-compare-goal ov-now g:>= ov-spytime)", "(building-type-count ov-castle >= 1)"]
 rule(SPY_DUE + ["(gold-amount < ov-spy-gold)"], ["(cc-add-resource gold ov-spy-gold)"],
      "Treason due and I have a castle: make sure the gold is there (the queen's pad can drain it)")
-rule(SPY_DUE + ["(can-spy)"], [
-    "(spy)",
-    "(up-modify-goal ov-spytime g:= ov-now)", "(up-modify-goal ov-spytime c:+ ov-spy-every)",
-    f"(up-set-shared-goal c: {SHARED['SPYNEXT']} g: ov-spytime)",
-    '(up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)',
-], "the first AI with a castle uses Treason; the shared clock stops the others until the next one")
-rule(SPY_DUE + ["(not (can-spy))", "(can-research ov-ri-spies)"], [
-    "(research ov-ri-spies)",
-    "(up-modify-goal ov-spytime g:= ov-now)", "(up-modify-goal ov-spytime c:+ ov-spy-every)",
-    f"(up-set-shared-goal c: {SHARED['SPYNEXT']} g: ov-spytime)",
-    '(up-chat-data-to-all "c1_enemy: player %d researched Spies/Treason" g: ov-me)',
-], "fallback: the castle tech itself (408 = Spies/Treason)")
-rule([TICK, LEAD, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-treaty c:<= 0)"], [
-    "(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-spytime)",
-], "leader: seconds Treason is overdue (negative = not due yet)")
-rule([TICK, LEAD, "(up-compare-goal ov-phase c:>= 1)", "(up-compare-goal ov-treaty c:<= 0)",
-      "(up-compare-goal ov-tmp c:>= 90)", CHATTY], [
-    '(chat-to-all "c1_enemy: Treason is overdue - no AI has a castle that can use it")',
+NEXT_SPY = ["(up-modify-goal ov-spytime g:= ov-now)", "(up-modify-goal ov-spytime c:+ ov-spy-every)",
+            f"(up-set-shared-goal c: {SHARED['SPYNEXT']} g: ov-spytime)"]
+for n in range(2, 9):
+    rule(SPY_DUE + [f"(player-number {n})", "(can-research ov-ri-spies)"],
+         ["(research ov-ri-spies)", *NEXT_SPY,
+          f'(chat-to-all "c1_enemy: player {n} researched Treason to find your king")'],
+         "Treason = castle tech 408 (this is what worked in v2). The shared clock "
+         "stops every other AI until the next one is due" if n == 2 else None)
+    rule(SPY_DUE + [f"(player-number {n})", "(not (can-research ov-ri-spies))", "(can-spy)"],
+         ["(spy)", *NEXT_SPY, f'(chat-to-all "c1_enemy: player {n} used Treason to find your king")'],
+         "backup: the spy command, if the tech can't be researched right now" if n == 2 else None)
+rule([TICK, LEAD], ["(up-modify-goal ov-tmp g:= ov-now)", "(up-modify-goal ov-tmp g:- ov-spytime)"],
+     "leader: seconds Treason is overdue (negative = not due yet)")
+rule([TICK, LEAD, "(up-compare-goal ov-tmp c:>= 90)", CHATTY], [
+    '(chat-to-all "c1_enemy: Treason is overdue - no AI with a castle can research it")',
     "(disable-self)",
 ], "tell you once if nobody can use Treason")
 
@@ -358,7 +355,7 @@ rule([TICK, LEAD, "(up-compare-goal ov-phase c:== 0)", "(up-compare-goal ov-trea
     f"(up-modify-goal ov-phase c:= {GATHER})",
 ], "leader: start the first gather (right away, or near the end of the truce)")
 rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal ov-treaty c:> 0)", CHATTY], [
-    '(up-chat-data-to-all "c1_enemy coalition: gathering, truce ends in %d seconds" g: ov-treaty)',
+    '(chat-to-all "c1_enemy coalition: gathering for the attack at the end of the truce")',
     "(disable-self)",
 ])
 rule([TICK, LEAD], [
@@ -377,7 +374,7 @@ rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal
     f"(up-set-shared-goal c: {SHARED['WAVE']} g: ov-wave)",
     f"(up-modify-goal ov-phase c:= {ATTACK})",
     "(up-modify-goal ov-tmp c:= 0)",
-    '(up-chat-data-to-all "c1_enemy coalition: ATTACK! wave %d" g: ov-wave)',
+    '(chat-to-all "c1_enemy coalition: ATTACK!")',
 ], "leader: gather -> attack when most armies are ready (or the gather timer ran out) and the truce is over")
 rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal ov-ktime c:> 0)"], [
     "(up-modify-goal ov-dist g:= ov-now)", "(up-modify-goal ov-dist g:- ov-ktime)",
@@ -392,7 +389,7 @@ rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {GATHER})", "(up-compare-goal
     f"(up-set-shared-goal c: {SHARED['WAVE']} g: ov-wave)",
     f"(up-modify-goal ov-phase c:= {ATTACK})",
     "(up-modify-goal ov-tmp c:= 0)",
-    '(up-chat-data-to-all "c1_enemy coalition: king found - everyone ATTACK! wave %d" g: ov-wave)',
+    '(chat-to-all "c1_enemy coalition: king found - everyone ATTACK!")',
 ], "leader: a fresh king sighting (after this regroup began) sends everyone at once")
 rule([TICK, LEAD], [
     sget(SHARED["ARMYSTART"], "ov-armystart"),
@@ -404,7 +401,7 @@ rule([TICK, LEAD, f"(up-compare-goal ov-phase c:== {ATTACK})",
     f"(up-set-shared-goal c: {SHARED['PHASE']} c: {GATHER})",
     f"(up-set-shared-goal c: {SHARED['PHASESTART']} g: ov-now)",
     f"(up-modify-goal ov-phase c:= {GATHER})",
-    '(up-chat-data-to-all "c1_enemy coalition: regrouping, %d soldiers left" g: ov-armysum)',
+    '(chat-to-all "c1_enemy coalition: regrouping")',
 ], "leader: attack -> regroup after heavy losses or a long fight")
 
 # ------------------------------------------------- every AI: read the plan

@@ -35,6 +35,7 @@
 (defconst ov-spread 0)
 (defconst ov-plenty 3000)
 (defconst ov-camp-dist 12)
+(defconst ov-first-spy 1770)
 (defconst ov-fact-game-time 0)
 (defconst ov-fact-military-pop 31)
 (defconst ov-pos-center 0)
@@ -235,23 +236,67 @@
     (up-modify-goal ov-treaty c:max 0)
 )
 
-; one-time check you can read in chat
+; proof the coalition layer is running
 (defrule
-    (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-now c:>= 10)
-    (up-compare-goal ov-me c:== 2)
+    (player-number 2)
+    (up-compare-goal ov-now c:>= 3)
     (up-compare-const ov-chatty == 1)
 =>
-    (up-chat-data-to-all "c1_enemy: truce timer reads %d seconds left" g: ov-treaty)
+    (chat-to-all "c1_enemy: player 2 joined the coalition")
     (disable-self)
 )
 
 (defrule
-    (up-compare-goal ov-me c:>= 1)
+    (player-number 3)
     (up-compare-goal ov-now c:>= 3)
     (up-compare-const ov-chatty == 1)
 =>
-    (up-chat-data-to-all "c1_enemy: player %d joined the coalition" g: ov-me)
+    (chat-to-all "c1_enemy: player 3 joined the coalition")
+    (disable-self)
+)
+
+(defrule
+    (player-number 4)
+    (up-compare-goal ov-now c:>= 3)
+    (up-compare-const ov-chatty == 1)
+=>
+    (chat-to-all "c1_enemy: player 4 joined the coalition")
+    (disable-self)
+)
+
+(defrule
+    (player-number 5)
+    (up-compare-goal ov-now c:>= 3)
+    (up-compare-const ov-chatty == 1)
+=>
+    (chat-to-all "c1_enemy: player 5 joined the coalition")
+    (disable-self)
+)
+
+(defrule
+    (player-number 6)
+    (up-compare-goal ov-now c:>= 3)
+    (up-compare-const ov-chatty == 1)
+=>
+    (chat-to-all "c1_enemy: player 6 joined the coalition")
+    (disable-self)
+)
+
+(defrule
+    (player-number 7)
+    (up-compare-goal ov-now c:>= 3)
+    (up-compare-const ov-chatty == 1)
+=>
+    (chat-to-all "c1_enemy: player 7 joined the coalition")
+    (disable-self)
+)
+
+(defrule
+    (player-number 8)
+    (up-compare-goal ov-now c:>= 3)
+    (up-compare-const ov-chatty == 1)
+=>
+    (chat-to-all "c1_enemy: player 8 joined the coalition")
     (disable-self)
 )
 
@@ -314,11 +359,16 @@
     (up-get-shared-goal c: 243 ov-spytime)
 )
 
+; the first Treason is due ov-spy-lead seconds before the truce ends
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+=>
+    (up-modify-goal ov-spytime c:max ov-first-spy)
+)
+
 ; Treason due and I have a castle: make sure the gold is there (the queen's pad can drain it)
 (defrule
     (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-treaty c:<= ov-spy-lead)
     (up-compare-goal ov-now g:>= ov-spytime)
     (building-type-count ov-castle >= 1)
     (gold-amount < ov-spy-gold)
@@ -326,45 +376,215 @@
     (cc-add-resource gold ov-spy-gold)
 )
 
-; the first AI with a castle uses Treason; the shared clock stops the others until the next one
+; Treason = castle tech 408 (this is what worked in v2). The shared clock stops every other AI until the next one is due
 (defrule
     (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-treaty c:<= ov-spy-lead)
     (up-compare-goal ov-now g:>= ov-spytime)
     (building-type-count ov-castle >= 1)
-    (can-spy)
-=>
-    (spy)
-    (up-modify-goal ov-spytime g:= ov-now)
-    (up-modify-goal ov-spytime c:+ ov-spy-every)
-    (up-set-shared-goal c: 243 g: ov-spytime)
-    (up-chat-data-to-all "c1_enemy: player %d used Treason to find your king" g: ov-me)
-)
-
-; fallback: the castle tech itself (408 = Spies/Treason)
-(defrule
-    (up-compare-goal ov-tick c:== 1)
-    (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-treaty c:<= ov-spy-lead)
-    (up-compare-goal ov-now g:>= ov-spytime)
-    (building-type-count ov-castle >= 1)
-    (not (can-spy))
+    (player-number 2)
     (can-research ov-ri-spies)
 =>
     (research ov-ri-spies)
     (up-modify-goal ov-spytime g:= ov-now)
     (up-modify-goal ov-spytime c:+ ov-spy-every)
     (up-set-shared-goal c: 243 g: ov-spytime)
-    (up-chat-data-to-all "c1_enemy: player %d researched Spies/Treason" g: ov-me)
+    (chat-to-all "c1_enemy: player 2 researched Treason to find your king")
+)
+
+; backup: the spy command, if the tech can't be researched right now
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 2)
+    (not (can-research ov-ri-spies))
+    (can-spy)
+=>
+    (spy)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 2 used Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 3)
+    (can-research ov-ri-spies)
+=>
+    (research ov-ri-spies)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 3 researched Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 3)
+    (not (can-research ov-ri-spies))
+    (can-spy)
+=>
+    (spy)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 3 used Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 4)
+    (can-research ov-ri-spies)
+=>
+    (research ov-ri-spies)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 4 researched Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 4)
+    (not (can-research ov-ri-spies))
+    (can-spy)
+=>
+    (spy)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 4 used Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 5)
+    (can-research ov-ri-spies)
+=>
+    (research ov-ri-spies)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 5 researched Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 5)
+    (not (can-research ov-ri-spies))
+    (can-spy)
+=>
+    (spy)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 5 used Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 6)
+    (can-research ov-ri-spies)
+=>
+    (research ov-ri-spies)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 6 researched Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 6)
+    (not (can-research ov-ri-spies))
+    (can-spy)
+=>
+    (spy)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 6 used Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 7)
+    (can-research ov-ri-spies)
+=>
+    (research ov-ri-spies)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 7 researched Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 7)
+    (not (can-research ov-ri-spies))
+    (can-spy)
+=>
+    (spy)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 7 used Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 8)
+    (can-research ov-ri-spies)
+=>
+    (research ov-ri-spies)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 8 researched Treason to find your king")
+)
+
+(defrule
+    (up-compare-goal ov-tick c:== 1)
+    (up-compare-goal ov-now g:>= ov-spytime)
+    (building-type-count ov-castle >= 1)
+    (player-number 8)
+    (not (can-research ov-ri-spies))
+    (can-spy)
+=>
+    (spy)
+    (up-modify-goal ov-spytime g:= ov-now)
+    (up-modify-goal ov-spytime c:+ ov-spy-every)
+    (up-set-shared-goal c: 243 g: ov-spytime)
+    (chat-to-all "c1_enemy: player 8 used Treason to find your king")
 )
 
 ; leader: seconds Treason is overdue (negative = not due yet)
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-leader c:== 1)
-    (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-treaty c:<= 0)
 =>
     (up-modify-goal ov-tmp g:= ov-now)
     (up-modify-goal ov-tmp g:- ov-spytime)
@@ -374,12 +594,10 @@
 (defrule
     (up-compare-goal ov-tick c:== 1)
     (up-compare-goal ov-leader c:== 1)
-    (up-compare-goal ov-phase c:>= 1)
-    (up-compare-goal ov-treaty c:<= 0)
     (up-compare-goal ov-tmp c:>= 90)
     (up-compare-const ov-chatty == 1)
 =>
-    (chat-to-all "c1_enemy: Treason is overdue - no AI has a castle that can use it")
+    (chat-to-all "c1_enemy: Treason is overdue - no AI with a castle can research it")
     (disable-self)
 )
 
@@ -798,7 +1016,7 @@
     (up-compare-goal ov-treaty c:> 0)
     (up-compare-const ov-chatty == 1)
 =>
-    (up-chat-data-to-all "c1_enemy coalition: gathering, truce ends in %d seconds" g: ov-treaty)
+    (chat-to-all "c1_enemy coalition: gathering for the attack at the end of the truce")
     (disable-self)
 )
 
@@ -834,7 +1052,7 @@
     (up-set-shared-goal c: 203 g: ov-wave)
     (up-modify-goal ov-phase c:= 2)
     (up-modify-goal ov-tmp c:= 0)
-    (up-chat-data-to-all "c1_enemy coalition: ATTACK! wave %d" g: ov-wave)
+    (chat-to-all "c1_enemy coalition: ATTACK!")
 )
 
 ; leader: ov-dist = seconds since the king was last seen
@@ -866,7 +1084,7 @@
     (up-set-shared-goal c: 203 g: ov-wave)
     (up-modify-goal ov-phase c:= 2)
     (up-modify-goal ov-tmp c:= 0)
-    (up-chat-data-to-all "c1_enemy coalition: king found - everyone ATTACK! wave %d" g: ov-wave)
+    (chat-to-all "c1_enemy coalition: king found - everyone ATTACK!")
 )
 
 (defrule
@@ -890,7 +1108,7 @@
     (up-set-shared-goal c: 202 c: 1)
     (up-set-shared-goal c: 208 g: ov-now)
     (up-modify-goal ov-phase c:= 1)
-    (up-chat-data-to-all "c1_enemy coalition: regrouping, %d soldiers left" g: ov-armysum)
+    (chat-to-all "c1_enemy coalition: regrouping")
 )
 
 ; every AI: read the shared plan

@@ -1,5 +1,5 @@
 HANDOFF - Custom1 coalition AI (AoE2 DE)
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 GOAL
   An AI for the user's custom games. The user (player 1) plays an "overlord":
@@ -167,3 +167,17 @@ SESSION 2026-11-17 (v4)
     - ov-spread 0 (no sideways offset). Formation 4 (box) for march and attack. AoE2 has no
       column formation; up-target-point splits orders into groups of <=20, so a box order gives
       a column of tight blocks.
+
+SESSION 2026-11-18 (v5) - ROOT CAUSES FOUND
+  User: no chat at all in game; Treason never fires. In v2 Treason fired constantly and
+    "king spotted" showed. History: v2 and e13829d had an unguarded (research 408) rule, and
+    THAT is what produced Treason. 7f47356 restricted it to non-Regicide games and relied on
+    the (spy) command, and Treason stopped for good. So (spy)/(can-spy) apparently never
+    worked for these AIs; research 408 does.
+  Chat: up-chat-data-to-all messages never appeared (in game or in any recording), not even
+    the unconditional "joined". Only chat-to-all ("king spotted") ever showed. All chat now
+    uses chat-to-all with literal text (per-player rules where the player number matters).
+  Treason now: research 408 on a shared clock (shared goal 243), first due at game time
+    ov-first-spy = truce-max - 30 = 1770s, then every 900s. It doesn't depend on the phase
+    logic or the truce reading. Any AI with a castle (gold topped up to 1000 by cheat) does
+    it; the (spy) command is only a backup. The leader chats once if it's 90s overdue.
