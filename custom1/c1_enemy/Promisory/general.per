@@ -1355,6 +1355,7 @@
 	(set-goal temporary-goal10 444722))
 (defrule
 	(goal temporary-goal10 444722)
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(up-set-target-object search-local c: 0)
 	(up-set-target-object search-remote c: 0)
 =>
@@ -1372,14 +1373,13 @@
 
 
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal attacking yes)
 	(goal patroldefense yes)
 	(timer-triggered patrol-timer) ; ; ;
 ;	(timer-triggered fivesec)
 =>
 	(up-full-reset-search)
-	(up-set-target-point position-self-x) ; c1_enemy patch: only soldiers near home
-	(up-filter-distance c: -1 c: 30) ; c1_enemy patch
 	(up-filter-include cmdid-military -1 -1 -1)
 	(up-filter-exclude -1 -1 orderid-explore -1)
 	(up-find-local c: all-units-class c: 240)
@@ -1391,13 +1391,12 @@
 	(disable-timer patrol-timer)
 	(set-goal patroldefense no))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal patroldefense yes)
 	(timer-triggered patrol-timer)
 ;	(timer-triggered fivesec)
 =>
 	(up-full-reset-search)
-	(up-set-target-point position-self-x) ; c1_enemy patch: only soldiers near home
-	(up-filter-distance c: -1 c: 30) ; c1_enemy patch
 	(up-filter-include cmdid-military -1 -1 -1)
 	(up-filter-exclude -1 -1 orderid-explore -1)
 	(up-find-local c: all-units-class c: 240)
@@ -1408,7 +1407,7 @@
 ;	(chat-to-player my-player-number "Stopping patrol-defense.2")
 	(disable-timer patrol-timer)
 	(set-goal patroldefense no)
-	(do-nothing)) ; c1_enemy patch: no up-retreat-now
+	(up-retreat-now))
 
 (defrule ; debug rule
 (or	(strategic-number sn-focus-player-number > max-players)
@@ -1606,6 +1605,7 @@
 	(set-goal temporary-goal10 444723))
 (defrule
 	(goal temporary-goal10 444723)
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(up-set-target-object search-local c: 0)
 	(up-set-target-object search-remote c: 0)
 =>
@@ -1632,14 +1632,13 @@
 
 
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal attacking yes)
 	(goal patrolhelp yes)
 	(timer-triggered patrol-timer) ; ; ;
 ;	(timer-triggered fivesec)
 =>
 	(up-full-reset-search)
-	(up-set-target-point position-self-x) ; c1_enemy patch: only soldiers near home
-	(up-filter-distance c: -1 c: 30) ; c1_enemy patch
 	(up-filter-include cmdid-military -1 -1 -1)
 	(up-filter-exclude -1 -1 orderid-explore -1)
 	(up-find-local c: all-units-class c: 240)
@@ -1651,13 +1650,12 @@
 	(disable-timer patrol-timer)
 	(set-goal patrolhelp no))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal patrolhelp yes)
 	(timer-triggered patrol-timer)
 ;	(timer-triggered fivesec)
 =>
 	(up-full-reset-search)
-	(up-set-target-point position-self-x) ; c1_enemy patch: only soldiers near home
-	(up-filter-distance c: -1 c: 30) ; c1_enemy patch
 	(up-filter-include cmdid-military -1 -1 -1)
 	(up-filter-exclude -1 -1 orderid-explore -1)
 	(up-find-local c: all-units-class c: 240)
@@ -1668,7 +1666,7 @@
 ;	(chat-to-player my-player-number "Stopping patrol-help.2")
 	(disable-timer patrol-timer)
 	(set-goal patrolhelp no)
-	(do-nothing)) ; c1_enemy patch: no up-retreat-now
+	(up-retreat-now))
 
 
 (defrule
@@ -2088,6 +2086,7 @@
 =>
 	(up-jump-rule 40))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(true);	(soldier-count >= 1)
 =>
 	(up-full-reset-search)
@@ -4092,6 +4091,7 @@
 	(set-goal temporary-goal2 9)
 	(set-goal temporary-goal3 4))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(up-set-target-object search-local c: 0)
 =>
 	(up-full-reset-search)

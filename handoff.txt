@@ -246,3 +246,25 @@ v8 changes:
  - military focus: after the truce with >= ov-rich (10000) food, wood and gold, goal 417=1
    blocks Promisory villager training (units.per, 7 rules) above ov-vill-cap (50), and
    extra villagers are deleted ov-vill-trim (10) per tick.
+
+==== v9 (2026-11-19) ====
+v8 playtest: Treason lookup failed at 29:30 (king garrisoned; scenario ID 544300 IS the
+in-game ID, verified via castle 553868 in the recording) but worked at 44:35, 59:35,
+74:35. Waves still turned back. Recording: P2 got 462 STOP orders 9s after the 30:04
+wave = the v8-patched "Actively defending" stop (30-tile radius = the whole fresh wave).
+Also found Promisory "Retreating, it's getting dangerous" (moves all soldiers >8 tiles
+from home back, no-attack stance), "Trying not to get lured out of town", town-size
+retreat, and general.per:4094 which musters non-fighting soldiers at the AI's own
+building nearest the enemy.
+v9:
+ - custom1/promisory_orig/ holds untouched general/tsa/orb/units.per; gen_overlord.py
+   writes the patched copies. Every rule that up-retreat-now's, or stops/moves the army
+   (cmdid-military / all-units-class 240, not ship up-retreat-to) gets
+   (not (goal 414 1)); overlord sets goal 414 (ov-war) = 1 after the truce. 23 rules +
+   the two patrol-defense triggers. Before the truce Promisory behaves as before.
+ - no team waves needed to move troops: every 20s (ov-push-every 4 ticks) EACH AI
+   patrols every soldier that is not attacking to the target, no formation. The team
+   target/announcements and the full send on a new target stay.
+ - Treason lookup retries every tick until found (ov-look goal 442), chat changed to
+   "has not found your king yet (garrisoned?) - still looking".
+ - ov-king-memory 2700.

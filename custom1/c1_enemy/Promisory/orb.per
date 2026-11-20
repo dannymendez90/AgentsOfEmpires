@@ -583,6 +583,7 @@
 ;	(up-remove-objects search-local object-data-distance >= 8); 9
 	(up-get-search-state local-total))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(up-compare-goal local-total >= 1)
 	(up-compare-goal remote-total >= 1)
 	(players-building-type-count target-player town-center >= 1)
@@ -858,6 +859,7 @@
 	(set-strategic-number sn-number-attack-groups 0)
 	(set-strategic-number sn-percent-attack-soldiers 0))
 (defrule; s2; rule 45
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal temporary-goal 59395)
 =>
 	(set-strategic-number sn-percent-attack-boats 0); for now
@@ -890,6 +892,7 @@
 	(set-strategic-number sn-number-attack-groups 0)
 	(set-strategic-number sn-percent-attack-soldiers 0))
 (defrule; s4
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal temporary-goal 59396)
 =>
 	(set-strategic-number sn-percent-attack-boats 0); for now

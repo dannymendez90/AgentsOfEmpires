@@ -412,6 +412,7 @@
 ;	(set-goal attacking no)
 	(set-goal retreatnow yes))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal attacking yes)
 	(up-compare-goal target-mpop g:> my-mpop)
 	(up-compare-goal retreatnow != yes)
@@ -456,6 +457,7 @@
 	(set-goal attacking no)
 	(up-modify-flag retreat-flag c:+ 2))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(strategic-number sn-maximum-town-size >= 20); for now
 	(up-compare-goal ttower-distance >= 20);
 	(military-population < 45)
@@ -797,6 +799,7 @@
 	(set-goal attacking no)
 	(up-modify-flag retreat-flag c:+ 2))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 ;	(goal strategy a-rush)
 	(military-population < 50)
 	(up-projectile-target projectile-watch-tower == archery-class)
@@ -995,6 +998,7 @@
 	(set-goal attacking no)
 	(up-modify-flag retreat-flag c:+ 2))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(military-population < 50)
 	(up-projectile-target projectile-watch-tower == archery-class)
 	(up-projectile-detected projectile-watch-tower < 3000)
@@ -1248,6 +1252,7 @@
 	(chat-local-to-self "8.")
 	(set-goal temporary-goal7 41043))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal temporary-goal7 41043)
 =>
 	(set-goal attacking no)
@@ -2315,6 +2320,7 @@
 	(set-goal milunits yes)
 	(set-goal attackprioritychange yes))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal retreat yes)
 =>
 	(set-goal retreat no)
@@ -2368,6 +2374,7 @@
 	(enable-timer resetnow 6); 5
 	(up-full-reset-search)); 90
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal retreat yes)
 =>
 	(set-goal retreat no)
@@ -3052,6 +3059,7 @@
 	(up-modify-sn sn-maximum-town-size c:max 10)
 	(up-modify-sn sn-maximum-town-size c:min 15)); <= 14 => attacking no
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal attacking no)
 	(goal underattack no)
 	(strategic-number sn-military-superiority <= 1)
@@ -3066,6 +3074,7 @@
 ;	(disable-self)
 )
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal attacking no)
 	(goal underattack no)
 	(goal researchplan no)
@@ -3084,6 +3093,7 @@
 ;	(disable-self)
 )
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(goal attacking no)
 	(goal underattack no)
 	(up-compare-goal ttower-distance >= 33)
@@ -4940,6 +4950,7 @@
 	(up-get-point position-object temporary-point-x)
 	(up-get-search-state local-total))
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(up-compare-goal remote-total >= 1)
 ;	(up-compare-goal local-total >= 1)
 	(up-point-distance saved-point-x temporary-point-x <= 7)
@@ -4959,6 +4970,7 @@
 	(set-goal drushmicro no)
 	(enable-timer resetnow 8)); 9
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 	(up-projectile-detected projectile-town-center < 3000)
 	(unit-type-count siege-weapon-class < 1)
 	(military-population < 20)
@@ -6061,6 +6073,7 @@
 	(up-remove-objects search-local object-data-group-flag >= 0)
 	(up-get-search-state local-total)); end jump
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 ;(or	(goal temporary-goal8 76542)
 	(goal temporary-goal8 76543);)
 	(up-compare-goal local-total >= 1)
@@ -6171,6 +6184,7 @@
 	(up-lerp-tiles point3-x point2-x c: -1)
 )
 (defrule
+	(not (goal 414 1)) ; c1_enemy patch: off after the truce (overlord goal ov-war)
 ;(or	(goal temporary-goal8 76542)
 	(goal temporary-goal8 76543);)
 	(up-compare-goal local-total >= 1)

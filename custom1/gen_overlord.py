@@ -1,19 +1,20 @@
-"""Generate custom1/c1_enemy/overlord.per: team coordination for the enemy AIs (v8).
+"""Generate custom1/c1_enemy/overlord.per: team coordination for the enemy AIs (v9).
 
 Built for this setup: Regicide, player 1 alone against players 2-8 who are all
 allied, with a 30-minute truce.
 
-v7 is deliberately simple. The v2-v6 leader/phase/rally system never got past
-"gathering" in playtests (it waited for armies to assemble near the target, which
-never happened), so the armies sat idle. Everything now runs on shared clocks,
-the same mechanism that made Treason fire exactly on time:
+No mustering: every AI attacks on its own with its whole army, all toward the same
+point (your king's last known position), so the armies meet there instead of
+gathering first. Shared goals only carry knowledge (where the king is, the team
+target, the Treason clock):
 
   * Treason (castle tech 408): one team clock. First one ov-spy-lead seconds
     before the truce ends, then every ov-spy-every seconds, by the first AI with
     a castle (gold topped up by cheat). Treason does not let an AI script see the
     king, so right after it the AI looks him up by object ID (ov-king-id from the
-    scenario, replaced by the real ID whenever anyone sees him). 20s later that AI
-    says in chat whether it found him.
+    scenario, replaced by the real ID whenever anyone sees him) and keeps trying
+    every tick until it finds him (he can't be found while garrisoned). 20s later
+    that AI says in chat whether it found him.
   * King: every AI scans for your king every pass (by unit type and by class)
     and shares his position. After the truce, a sighting more than
     ov-retarget-dist tiles from the current team target makes him the target and
@@ -22,16 +23,18 @@ the same mechanism that made Treason fire exactly on time:
     picks ONE target for the whole team (king's last known position if seen in the
     last ov-king-memory seconds, otherwise your nearest building) and EVERY soldier
     of EVERY AI patrols there in box formation (ov-wave-action: patrol or attack-move).
-  * Between waves, every ov-idle-every ticks: idle soldiers out in the field go to the
-    target, and soldiers near the target restart their patrol from where they stand,
-    so a patrol never walks them all the way back home.
+  * Between waves, every ov-push-every ticks, EACH AI on its own sends every soldier
+    that isn't fighting to the target (patrol from where it stands, so a patrol's
+    return leg never walks them home, and new soldiers join straight away).
   * After the truce the stock AI's own attack groups are off, so they don't pull
     soldiers elsewhere.
   * Promisory patches (written into c1_enemy/Promisory by this script):
-    its "Actively defending" / "Helping ally" routine used to grab EVERY soldier
-    (including whole waves crossing the map), stop them 6 seconds later and call
-    up-retreat-now, which sent the army home. Now only soldiers within
-    ov-defend-radius tiles answer, and there is no retreat. After the truce, with
+    from promisory_orig/. After the truce (goal 414 = 1) every Promisory rule that
+    stops, retreats or moves the army home is off: "Actively defending" / "Helping
+    ally" (grabbed every soldier, stopped them 6s later, up-retreat-now), "Retreating,
+    it's getting dangerous", "Trying not to get lured out of town", the town-size
+    retreat, the tower/TC retreats. Before the truce they work, except that town
+    defense only uses soldiers within ov-defend-radius tiles. After the truce, with
     ov-rich of food, wood and gold, villager training stops at ov-vill-cap and extra
     villagers are deleted, so the population goes to soldiers.
   * Chat: type 200 for every AI's resources, 202-208 for one AI.
@@ -51,10 +54,9 @@ TUNING = {
     "ov-truce-max": 1800,       # the truce length in game seconds (your 30 minutes); attacks start after it
     "ov-tick-secs": 5,          # how often the team logic runs (game seconds)
     "ov-wave-every": 180,       # every 3 min: EVERY soldier attack-moves to the team target
-    "ov-idle-every": 6,         # every N ticks (6 x 5s = 30s): idle soldiers in the field re-sent
-    "ov-home-radius": 30,       # soldiers within this many tiles of their own town wait for the next wave
+    "ov-push-every": 4,         # every N ticks (4 x 5s = 20s): every soldier not fighting is re-sent
     "ov-retarget-dist": 12,     # a king sighting this far from the current target re-sends everyone
-    "ov-king-memory": 1200,     # the king's last known position stays the target this long
+    "ov-king-memory": 2700,     # the king's last known position stays the target this long (45 min)
     "ov-wave-action": 2,        # 2 patrol (default), 19 attack-move
     "ov-attack-formation": 4,   # 2 line, 4 box, 7 staggered, 8 flank, -1 none. AoE2 has no column
                                 # formation; orders go out in groups of <=20, so box = a column of tight blocks
@@ -68,7 +70,6 @@ TUNING = {
     "ov-chatty": 1,             # 1 = announce waves, sightings and Treason in chat
     "ov-plenty": 3000,          # with this much wood (or gold+stone) stockpiled...
     "ov-camp-dist": 12,         # ...new lumber/mining camps stay this close to a town center
-    "ov-near-target": 40,       # soldiers this close to the target restart their patrol every 30s
     "ov-defend-radius": 30,     # stock town defense only uses soldiers this close (patched into Promisory)
     "ov-king-id": 544300,       # your king's object ID in Custom1_1v7 (from the scenario file)
     "ov-rich": 10000,           # after the truce, with this much food, wood AND gold...
@@ -103,6 +104,8 @@ GOALS = {
     "ov-kx": 436, "ov-ky": 437, "ov-tgt-x": 438, "ov-tgt-y": 439,
     "ov-home-x": 440, "ov-home-y": 441, "ov-spytime": 445,
     "ov-seen": 415, "ov-kid": 416,
+    "ov-war": 414,      # read by the Promisory patches (as goal 414): 1 = after the truce
+    "ov-look": 442,     # 1 = Treason used, still looking the king up by ID
     "ov-novill": 417,   # read by the Promisory patches (as goal 417): 1 = no more villagers
 }
 
@@ -156,7 +159,7 @@ def army(facts, prep, comment=None, batches=3, formation="ov-attack-formation"):
 
 
 out.append(";;; overlord.per - generated by custom1/gen_overlord.py; edit that file, not this one.")
-out.append(";;; Team coordination layer (v8) for c1_enemy on top of the stock Promisory AI.\n")
+out.append(";;; Team coordination layer (v9) for c1_enemy on top of the stock Promisory AI.\n")
 for name, value in {**TUNING, **GAME, **GOALS}.items():
     out.append(f"(defconst {name} {value})")
 out.append("")
@@ -174,10 +177,10 @@ rule(["(up-compare-goal ov-now g:>= ov-next-tick)"], [
     "(up-modify-goal ov-next-tick g:= ov-now)", "(up-modify-goal ov-next-tick c:+ ov-tick-secs)",
     "(up-modify-goal ov-slow c:+ 1)",
 ])
-rule([TICK, "(up-compare-goal ov-slow c:>= ov-idle-every)"], ["(up-modify-goal ov-slow c:= 0)"])
+rule([TICK, "(up-compare-goal ov-slow c:>= ov-push-every)"], ["(up-modify-goal ov-slow c:= 0)"])
 for n in range(2, 9):
     rule([f"(player-number {n})", "(up-compare-goal ov-now c:>= 3)", CHATTY], [
-        f'(chat-to-all "c1_enemy: player {n} joined the coalition (v8)")', "(disable-self)",
+        f'(chat-to-all "c1_enemy: player {n} joined the coalition (v9)")', "(disable-self)",
     ], "proof the coalition layer is running" if n == 2 else None)
 
 # ------------------------------------------------------ finding the king
@@ -206,14 +209,15 @@ rule(["(up-compare-goal ov-ss-remote c:>= 1)"], [
 ], "I can see him: remember where, and his object ID for Treason")
 
 # Treason: the AI can't see what Treason shows you, so look him up by ID.
-# Placed here (before ov-tmp is reused) using ov-spied / ov-ktime from the last tick.
-rule([TICK, "(up-compare-goal ov-spied c:> 0)", "(up-compare-goal ov-ktime g:< ov-spied)",
+# Keeps trying every tick until it finds him (fails while he is garrisoned).
+rule([TICK, "(up-compare-goal ov-look c:== 1)",
       "(up-set-target-by-id g: ov-kid)",
       "(up-object-data ov-od-type == ov-king-unit)", "(up-object-data ov-od-player == ov-target-player)",
       "(up-object-data ov-od-hp > 0)"], [
     "(up-get-object-data ov-od-px ov-kx)",
     "(up-get-object-data ov-od-py ov-ky)",
     "(up-modify-goal ov-seen c:= 1)",
+    "(up-modify-goal ov-look c:= 0)",
     '(up-chat-data-to-all "c1_enemy: player %d - Treason located your king" g: ov-me)',
 ], "after my Treason: find the king by his object ID")
 rule(["(up-compare-goal ov-seen c:== 1)"], [
@@ -233,13 +237,17 @@ rule(["(up-compare-goal ov-seen c:== 1)", TRUCE_OVER, "(up-compare-goal ov-dist 
 ], "after the truce, a sighting away from the current target: he's the target now, everyone goes")
 
 # ---------------------------------------------------------------- Treason
+rule(["(true)"], ["(up-modify-goal ov-war c:= 0)"])
+rule([TRUCE_OVER], ["(up-modify-goal ov-war c:= 1)"],
+     "goal 414 = 1 after the truce: the patched Promisory stops retreating / stopping the army")
+
 rule([TICK], [sget(SHARED["SPYNEXT"], "ov-spytime"), sget(SHARED["KTIME"], "ov-ktime"),
               "(up-modify-goal ov-spytime c:max ov-first-spy)"],
      "Treason: one team clock (SPYNEXT); first one ov-spy-lead seconds before the truce ends")
 SPY_DUE = [TICK, "(up-compare-goal ov-now g:>= ov-spytime)", "(building-type-count ov-castle >= 1)"]
 rule(SPY_DUE + ["(gold-amount < ov-spy-gold)"], ["(cc-add-resource gold ov-spy-gold)"],
      "Treason due and I have a castle: make sure the gold is there (the queen's pad can drain it)")
-NEXT_SPY = ["(up-modify-goal ov-spied g:= ov-now)",
+NEXT_SPY = ["(up-modify-goal ov-spied g:= ov-now)", "(up-modify-goal ov-look c:= 1)",
             "(up-modify-goal ov-spytime g:= ov-now)", "(up-modify-goal ov-spytime c:+ ov-spy-every)",
             sset(SHARED["SPYNEXT"], "ov-spytime")]
 rule(SPY_DUE + ["(can-research ov-ri-spies)"], [
@@ -259,7 +267,7 @@ rule([TICK, "(up-compare-goal ov-spied c:> 0)", "(up-compare-goal ov-tmp c:>= ov
      "20s after my Treason: tell you whether anyone on the team saw the king since")
 rule([TICK, "(up-compare-goal ov-spied c:> 0)", "(up-compare-goal ov-tmp c:>= ov-spy-check)",
       "(up-compare-goal ov-ktime g:< ov-spied)", CHATTY],
-     ['(up-chat-data-to-all "c1_enemy: player %d - Treason did NOT show us your king" g: ov-me)'])
+     ['(up-chat-data-to-all "c1_enemy: player %d - Treason has not found your king yet (garrisoned?) - still looking" g: ov-me)'])
 rule([TICK, "(up-compare-goal ov-spied c:> 0)", "(up-compare-goal ov-tmp c:>= ov-spy-check)"],
      ["(up-modify-goal ov-spied c:= 0)"])
 
@@ -291,20 +299,13 @@ rule([TICK], [sget(SHARED["ORDID"], "ov-ordid"), sget(SHARED["TX"], "ov-tgt-x"),
               "(up-get-point ov-pos-self ov-home-x)"],
      "every AI: read the team order")
 ORDER_NEW = [TICK, TRUCE_OVER, "(up-compare-goal ov-ordid g:!= ov-myord)", "(up-compare-goal ov-tgt-x c:>= 0)"]
-out.append(";;; ---------- WAVE: every soldier attack-moves to the team target")
-army(ORDER_NEW, [], "new team order: EVERY soldier I have, wherever it is, attack-moves to the target")
+out.append(";;; ---------- WAVE: every soldier patrols to the team target")
+army(ORDER_NEW, [], "new team target: EVERY soldier I have, wherever it is, goes to the target")
 rule(ORDER_NEW, ["(up-modify-goal ov-myord g:= ov-ordid)"])
-IDLE_DUE = [TICK, TRUCE_OVER, "(up-compare-goal ov-slow c:== 0)", "(up-compare-goal ov-tgt-x c:>= 0)",
-            "(up-compare-goal ov-home-x c:>= 0)"]
-army(IDLE_DUE, ["(up-remove-objects ov-search-local ov-od-idling == 0)",
-                "(up-set-target-point ov-home-x)",
-                "(up-remove-objects ov-search-local ov-od-distance < ov-home-radius)"],
-     "every 30s: idle soldiers out in the field go to the target too (the ones at home wait for the wave)")
-army(IDLE_DUE, ["(up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)",
-                "(up-set-target-point ov-tgt-x)",
-                "(up-remove-objects ov-search-local ov-od-distance > ov-near-target)"],
-     "every 30s: soldiers near the target (not fighting) restart the patrol from where they stand,\n"
-     "; so the patrol's return leg never takes them home", formation=-1)
+PUSH_DUE = [TICK, TRUCE_OVER, "(up-compare-goal ov-slow c:== 0)", "(up-compare-goal ov-tgt-x c:>= 0)"]
+army(PUSH_DUE, ["(up-remove-objects ov-search-local ov-od-action == ov-actionid-attack)"],
+     "every 20s, each AI on its own: every soldier that isn't fighting goes to the target\n"
+     "; (patrol restarts from where it stands, so the return leg never takes it home)", formation=-1)
 
 # ------------------------------------- take the army away from the stock AI
 rule([TRUCE_OVER], [
@@ -381,51 +382,70 @@ if patched != text:
     print("set force-old-micro to 1 in", consts)
 
 MARK = "; c1_enemy patch"
-R = TUNING["ov-defend-radius"]
-
-
-def patch_file(path, edits):
-    """Text edits on a Promisory file. Each edit: (old, new, expected count). Idempotent."""
-    text = path.read_text(encoding="latin-1")
-    if MARK in text:
-        return
-    for old, new, count in edits:
-        assert text.count(old) == count, (path.name, old, text.count(old))
-        text = text.replace(old, new)
-    path.write_text(text, encoding="latin-1")
-    print("patched", path)
-
-
+WAR = f"\t(not (goal 414 1)) {MARK}: off after the truce (overlord goal ov-war)\n"
+orig = here / "promisory_orig"           # untouched Promisory files; patched copies go to c1_enemy/Promisory
 promisory = here / "c1_enemy" / "Promisory"
-STOP_OLD = """	(up-full-reset-search)
-	(up-filter-include cmdid-military -1 -1 -1)
-	(up-filter-exclude -1 -1 orderid-explore -1)
-	(up-find-local c: all-units-class c: 240)
-	(up-filter-exclude -1 -1 orderid-relic -1)
-	(up-find-local c: monastery-class c: 240)
-	(up-set-target-point position-self-x)
-	(up-target-point 0 action-stop -1 -1)"""
-STOP_NEW = f"""	(up-full-reset-search)
-	(up-set-target-point position-self-x) {MARK}: only soldiers near home
-	(up-filter-distance c: -1 c: {R}) {MARK}
-	(up-filter-include cmdid-military -1 -1 -1)
-	(up-filter-exclude -1 -1 orderid-explore -1)
-	(up-find-local c: all-units-class c: 240)
-	(up-filter-exclude -1 -1 orderid-relic -1)
-	(up-find-local c: monastery-class c: 240)
-	(up-set-target-point position-self-x)
-	(up-target-point 0 action-stop -1 -1)"""
-patch_file(promisory / "general.per", [
-    # "Actively defending" / "Helping ally": only soldiers near the threatened town answer
+
+
+def rules_of(text):
+    """(start, end) character spans of each defrule."""
+    starts = [m.start() for m in re.finditer(r"(?m)^\(defrule", text)] + [len(text)]
+    return list(zip(starts, starts[1:]))
+
+
+def strip_comments(rule_text):
+    return "\n".join(line.split(";")[0] for line in rule_text.split("\n"))
+
+
+def pulls_army_home(rule_text):
+    """Rules that stop, retreat or move the whole army (Promisory's retreat / defend logic)."""
+    body = strip_comments(rule_text)
+    if "=>" not in body:
+        return False
+    acts = body.split("=>", 1)[1]
+    if "up-retreat-now" in acts:
+        return True
+    army = re.search(r"cmdid-military|all-units-class c: 240", body)
+    order = re.search(r"action-stop|up-target-point [^)]*action-move", acts)
+    return bool(army and order and "up-retreat-to" not in acts)   # up-retreat-to = ship rules
+
+
+def patch(name, extra=(), war_rules=True):
+    """Write c1_enemy/Promisory/<name> from promisory_orig/<name>:
+    every army-pulling rule gets the ov-war guard, then the extra (old, new, count) edits."""
+    text = (orig / name).read_text(encoding="latin-1")
+    guarded = 0
+    if war_rules:
+        parts, last = [], 0
+        for a, b in rules_of(text):
+            rule_text = text[a:b]
+            if pulls_army_home(rule_text):
+                first_nl = rule_text.index("\n") + 1
+                rule_text = rule_text[:first_nl] + WAR + rule_text[first_nl:]
+                guarded += 1
+            parts.append(text[last:a] + rule_text)
+            last = b
+        text = "".join(parts) + text[last:]
+    for old, new, count in extra:
+        assert text.count(old) == count, (name, old, text.count(old))
+        text = text.replace(old, new)
+    (promisory / name).write_text(text, encoding="latin-1")
+    print(f"patched {name}: {guarded} retreat/stop rules off after the truce, {len(extra)} other edits")
+
+
+R = TUNING["ov-defend-radius"]
+patch("general.per", [
+    # "Actively defending" / "Helping ally": before the truce only soldiers near the town answer;
+    # after the truce never (it used to grab every soldier, waves included, then stop and retreat them)
     ("\t(up-filter-include cmdid-military -1 -1 on-mainland)\n\t(up-filter-exclude -1 actionid-attack orderid-explore warship-class); 4:-1",
      f"\t(up-filter-include cmdid-military -1 -1 on-mainland)\n\t(up-filter-distance c: -1 c: {R}) {MARK}: only soldiers near the town\n"
      "\t(up-filter-exclude -1 actionid-attack orderid-explore warship-class); 4:-1", 2),
-    # ...and when it ends, stop only those (it used to stop EVERY soldier, waves included)
-    (STOP_OLD, STOP_NEW, 4),
-    # ...and no army-wide retreat home
-    ("\t(up-retreat-now))", f"\t(do-nothing)) {MARK}: no up-retreat-now", 2),
+    ("(defrule\n\t(goal temporary-goal10 444722)\n", "(defrule\n\t(goal temporary-goal10 444722)\n" + WAR, 1),
+    ("(defrule\n\t(goal temporary-goal10 444723)\n", "(defrule\n\t(goal temporary-goal10 444723)\n" + WAR, 1),
 ])
-patch_file(promisory / "units.per", [
+patch("tsa.per")
+patch("orb.per")
+patch("units.per", [
     ("(defrule\n\t(goal trainvillager yes)\n",
      f"(defrule\n\t(goal trainvillager yes)\n\t(not (goal 417 1)) {MARK}: rich after the truce, no more villagers\n", 7),
-])
+], war_rules=False)
