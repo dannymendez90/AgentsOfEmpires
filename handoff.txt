@@ -268,3 +268,8 @@ v9:
  - Treason lookup retries every tick until found (ov-look goal 442), chat changed to
    "has not found your king yet (garrisoned?) - still looking".
  - ov-king-memory 2700.
+
+== c1_enemy v9.1 - MVP (2026-11-20) ==
+Playtested v9: waves reach the king, Treason reveals him, no more turning back. User accepted as MVP.
+Change: ov-attack-formation 4 (box) -> 2 (line) for wave / new-target full sends. The 20s push
+still uses no formation (-1) so units don't stall re-forming every cycle.

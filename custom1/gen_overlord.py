@@ -22,7 +22,7 @@ target, the Treason clock):
   * Waves: after the truce, every ov-wave-every seconds (team clock) the first AI
     picks ONE target for the whole team (king's last known position if seen in the
     last ov-king-memory seconds, otherwise your nearest building) and EVERY soldier
-    of EVERY AI patrols there in box formation (ov-wave-action: patrol or attack-move).
+    of EVERY AI patrols there in line formation (ov-wave-action: patrol or attack-move).
   * Between waves, every ov-push-every ticks, EACH AI on its own sends every soldier
     that isn't fighting to the target (patrol from where it stands, so a patrol's
     return leg never walks them home, and new soldiers join straight away).
@@ -58,8 +58,8 @@ TUNING = {
     "ov-retarget-dist": 12,     # a king sighting this far from the current target re-sends everyone
     "ov-king-memory": 2700,     # the king's last known position stays the target this long (45 min)
     "ov-wave-action": 2,        # 2 patrol (default), 19 attack-move
-    "ov-attack-formation": 4,   # 2 line, 4 box, 7 staggered, 8 flank, -1 none. AoE2 has no column
-                                # formation; orders go out in groups of <=20, so box = a column of tight blocks
+    "ov-attack-formation": 2,   # 2 line, 4 box, 7 staggered, 8 flank, -1 none. AoE2 has no column
+                                # formation; orders go out in groups of <=20, line = wide fronts that sweep the approach
     "ov-spy-every": 900,        # Treason every 15 min
     "ov-spy-lead": 30,          # first Treason this many seconds before the truce ends
     "ov-spy-gold": 1000,        # top up gold to this before Treason (cheat; Treason costs 400)
