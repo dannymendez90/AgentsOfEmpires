@@ -223,3 +223,26 @@ SESSION 2026-11-18 (v7) - REWRITE. Supersedes the v2-v6 COALITION DESIGN section
       king ("Treason worked" or "did NOT show us your king"). This is the test for whether
       Treason reveals the king to the AI's search.
     - Joined chat says "(v7)" so you can tell the version loaded.
+
+==== v8 (2026-11-19) ====
+Playtest of v7: waves announced and sent, but the bulk of each wave turned back and
+clustered in the AI cities; Treason researched on time but never revealed the king
+(the king was only found when the player exposed him).
+Root cause of the turn-back: Promisory general.per "Actively defending" / "Helping ally"
+(goals patroldefense / patrolhelp). Any enemy near ANY AI town -> every non-attacking
+soldier of the AI (no distance filter) patrols there, 6s later ALL soldiers are stopped
+and up-retreat-now sends the army home. Fixed by patches gen_overlord.py writes into
+custom1/c1_enemy/Promisory (marker "; c1_enemy patch"): distance filter
+ov-defend-radius (30) on the patrol and stop searches, up-retreat-now -> do-nothing.
+v8 changes:
+ - waves use patrol (ov-wave-action 2; 19 = attack-move). Every 30s soldiers within
+   ov-near-target (40) of the target, not fighting, restart the patrol from where they
+   stand (no formation), so the return leg never walks them home.
+ - Treason: after research, look the king up by object ID (up-set-target-by-id; checks
+   type 434, player 1, hp>0). ID = ov-king-id 544300 (scenario reference id) until any
+   AI sees him, then the real object-data-id (shared goal 247). Chat: "Treason located
+   your king". UNVERIFIED: whether in-game IDs equal scenario reference IDs and whether
+   up-set-target-by-id works through fog.
+ - military focus: after the truce with >= ov-rich (10000) food, wood and gold, goal 417=1
+   blocks Promisory villager training (units.per, 7 rules) above ov-vill-cap (50), and
+   extra villagers are deleted ov-vill-trim (10) per tick.

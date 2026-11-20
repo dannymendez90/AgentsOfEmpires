@@ -553,6 +553,7 @@
 ;=========================================================
 (defrule
 	(goal trainvillager yes)
+	(not (goal 417 1)) ; c1_enemy patch: rich after the truce, no more villagers
 	(research-available feudal-age)
 	(unit-type-count-total villager >= 22)
 	(up-compare-goal strategy-type == feudal-war)
@@ -10812,6 +10813,7 @@
 ;#end-if
 (defrule
 	(goal trainvillager yes)
+	(not (goal 417 1)) ; c1_enemy patch: rich after the truce, no more villagers
 (or	(civilian-population >= up-max-civ)
 	(and	(unit-type-count-total villager >= 5)
 		(and	(up-compare-goal custom-civ-pop >= up-max-civ)
@@ -10822,6 +10824,7 @@
 	(set-goal trainvillager no))
 (defrule
 	(goal trainvillager yes)
+	(not (goal 417 1)) ; c1_enemy patch: rich after the truce, no more villagers
 (or	(and	(up-compare-goal total-food-amount >= 2400)
 			(research-available feudal-age))
 (or	(population >= del-civ-pop)
@@ -10876,6 +10879,7 @@
 
 (defrule
 	(goal trainvillager yes)
+	(not (goal 417 1)) ; c1_enemy patch: rich after the truce, no more villagers
 (or	(and	(players-building-count any-enemy >= 1)
 		(and	(unit-type-count-total villager >= 12)
 			(up-compare-goal my-cpop g:> target-cpop)))
@@ -12076,6 +12080,7 @@
 	(train transport-ship))
 (defrule
 	(goal trainvillager yes)
+	(not (goal 417 1)) ; c1_enemy patch: rich after the truce, no more villagers
 	(current-age <= castle-age)
 (or	(current-age <= feudal-age)
 	(goal strategy fast-imp))
@@ -12092,6 +12097,7 @@
 	(up-jump-rule 1))
 (defrule
 	(goal trainvillager yes)
+	(not (goal 417 1)) ; c1_enemy patch: rich after the truce, no more villagers
 	(up-can-train escrow-state c: villager)
 =>
 	(enable-timer FDrop ffdrop)
@@ -12100,6 +12106,7 @@
 	(up-jump-rule 1)); end jump
 (defrule
 	(goal trainvillager yes)
+	(not (goal 417 1)) ; c1_enemy patch: rich after the truce, no more villagers
 (or	(up-pending-objects c: villager <= 0)
 (or	(up-compare-goal temporary-goal4 <= 0); valid when
 (or	(up-compare-goal temporary-goal4 >= ffdrop2); relevant
